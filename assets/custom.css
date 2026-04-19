@@ -1,0 +1,803 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   StockOracle — Dark Cyberpunk Financial Terminal Theme
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;500;700;800&display=swap');
+
+/* ── CSS Variables ────────────────────────────────────────────────────────── */
+:root {
+  --bg:         #060b14;
+  --bg2:        #0d1525;
+  --card:       #0f1a2e;
+  --card2:      #132038;
+  --border:     #1a2d4a;
+  --border2:    #243d5c;
+  --accent1:    #00c8ff;
+  --accent2:    #7b2fff;
+  --accent3:    #00e5a0;
+  --accent4:    #ffc440;
+  --accent5:    #ff4d6d;
+  --text:       #dce8f5;
+  --text-dim:   #6b8aad;
+  --text-muted: #3a5270;
+  --positive:   #00e5a0;
+  --negative:   #ff4d6d;
+  --glow1:      0 0 20px rgba(0, 200, 255, 0.25);
+  --glow2:      0 0 20px rgba(123, 47, 255, 0.25);
+  --glow3:      0 0 20px rgba(0, 229, 160, 0.25);
+  --font-main:  'Space Grotesk', sans-serif;
+  --font-mono:  'JetBrains Mono', monospace;
+  --font-head:  'Syne', sans-serif;
+}
+
+/* ── Reset & Base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body, html {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-main);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* ── Stock Market Background ──────────────────────────────────────────────── *
+ * Layer 1 (::before) — the actual stock chart photo, very darkened & blurred  *
+ * Layer 2 (::after)  — the cyan grid lines on top                             *
+ * Both are fixed so they don't scroll with content.                            *
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  /* The stock chart inspiration image placed in /assets/stock-bg.jpg */
+  background-image: url('/assets/stock-bg.jpg');
+  background-size: cover;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  /* Deep dark tint so it's extremely subtle — just a ghost of the chart */
+  filter: brightness(0.12) saturate(0.6) blur(1px);
+  opacity: 0.65;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Dark gradient overlay so the image fades at the top and doesn't compete */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    /* Strong dark vignette at top so header stays clean */
+    linear-gradient(180deg,
+      rgba(6,11,20,0.92) 0%,
+      rgba(6,11,20,0.75) 25%,
+      rgba(6,11,20,0.55) 55%,
+      rgba(6,11,20,0.70) 100%
+    ),
+    /* Cyan grid lines layered over the image */
+    linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px);
+  background-size: auto, 40px 40px, 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar             { width: 6px; height: 6px; }
+::-webkit-scrollbar-track       { background: var(--bg2); }
+::-webkit-scrollbar-thumb       { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent1); }
+
+/* ── Page Wrapper ─────────────────────────────────────────────────────────── */
+.page-wrapper {
+  position: relative;
+  z-index: 1;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0 20px 40px;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.app-header {
+  position: relative;
+  padding: 28px 36px 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.app-header::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent3));
+}
+
+.app-header::after {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 300px; height: 300px;
+  background: radial-gradient(circle, rgba(0,200,255,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.header-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  background: rgba(0,200,255,0.1);
+  border: 1px solid rgba(0,200,255,0.3);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--accent1);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+}
+
+.header-title {
+  font-family: var(--font-head);
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.1;
+  background: linear-gradient(135deg, var(--text) 0%, var(--accent1) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+
+.header-sub {
+  color: var(--text-dim);
+  font-size: 13px;
+  max-width: 600px;
+}
+
+/* ── Control Bar ─────────────────────────────────────────────────────────── */
+.control-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 20px 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-bottom: 24px;
+  position: relative;
+  overflow: visible;     /* was hidden — was clipping dropdown menus */
+  z-index: 100;
+}
+
+.control-bar::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--accent1), var(--accent2));
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+/* ── Dash Input Overrides ─────────────────────────────────────────────────── */
+/* ── Dropdown — z-index stack fix ──────────────────────────────────────── */
+/* .control-bar now has overflow:visible so menus are no longer clipped.    */
+/* The menu-outer is raised to z-index 9999 so it floats above all cards.   */
+
+.dash-dropdown {
+  position: relative;
+  z-index: 200;
+}
+
+.dash-dropdown .Select-control {
+  background-color: var(--card2) !important;
+  border: 1px solid var(--border2) !important;
+  color: var(--text) !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.dash-dropdown .Select-control:hover {
+  border-color: var(--accent1) !important;
+  box-shadow: 0 0 0 2px rgba(0,200,255,0.12) !important;
+}
+
+.dash-dropdown .Select-menu-outer {
+  background-color: var(--card2) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: 8px !important;
+  margin-top: 4px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px var(--border) !important;
+  z-index: 9999 !important;
+  overflow: hidden !important;
+}
+
+.dash-dropdown .Select-menu {
+  background-color: var(--card2) !important;
+  border-radius: 8px !important;
+  max-height: 260px !important;
+  overflow-y: auto !important;
+}
+
+.dash-dropdown .Select-value-label  { color: var(--text) !important; }
+.dash-dropdown .Select-placeholder  { color: var(--text-dim) !important; }
+
+.dash-dropdown .Select-option {
+  background: var(--card2) !important;
+  color: var(--text) !important;
+  padding: 9px 14px !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  transition: background 0.15s !important;
+}
+
+.dash-dropdown .Select-option:hover,
+.dash-dropdown .Select-option.is-focused {
+  background: rgba(0,200,255,0.1) !important;
+  color: var(--accent1) !important;
+}
+
+.dash-dropdown .Select-option.is-selected {
+  background: rgba(0,200,255,0.15) !important;
+  color: var(--accent1) !important;
+  font-weight: 600 !important;
+}
+
+.dash-dropdown .Select-arrow-zone { padding-right: 10px !important; }
+.dash-dropdown .Select-arrow {
+  border-top-color: var(--text-dim) !important;
+  border-width: 5px 4px 2px !important;
+}
+
+/* Scrollbar inside dropdown */
+.dash-dropdown .Select-menu::-webkit-scrollbar       { width: 4px; }
+.dash-dropdown .Select-menu::-webkit-scrollbar-track { background: var(--card); }
+.dash-dropdown .Select-menu::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+input[type="text"], .dash-input {
+  background: var(--card2) !important;
+  border: 1px solid var(--border2) !important;
+  color: var(--text) !important;
+  border-radius: 8px !important;
+  padding: 8px 14px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 14px !important;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="text"]:focus, .dash-input:focus {
+  border-color: var(--accent1) !important;
+  box-shadow: var(--glow1) !important;
+  outline: none !important;
+}
+
+.DateInput_input {
+  background: var(--card2) !important;
+  color: var(--text) !important;
+  border-color: var(--border2) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+}
+
+.DateRangePickerInput {
+  background: var(--card2) !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--border2) !important;
+}
+
+/* ── Predict Button ──────────────────────────────────────────────────────── */
+.predict-btn {
+  padding: 10px 28px !important;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2)) !important;
+  border: none !important;
+  border-radius: 8px !important;
+  color: #fff !important;
+  font-family: var(--font-main) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+  cursor: pointer !important;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s !important;
+  box-shadow: 0 4px 15px rgba(0,200,255,0.3) !important;
+  white-space: nowrap;
+}
+
+.predict-btn:hover {
+  opacity: 0.9 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 20px rgba(0,200,255,0.4) !important;
+}
+
+.predict-btn:active { transform: translateY(0) !important; }
+
+/* ── KPI Cards ───────────────────────────────────────────────────────────── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.kpi-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.kpi-card:hover {
+  border-color: var(--border2);
+  box-shadow: var(--glow1);
+}
+
+.kpi-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent1), transparent);
+  opacity: 0.5;
+}
+
+.kpi-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+}
+
+.kpi-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+
+.kpi-change {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  margin-top: 4px;
+}
+
+.kpi-change.positive { color: var(--positive); }
+.kpi-change.negative { color: var(--negative); }
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+.custom-tabs .tab {
+  background: transparent !important;
+  border: none !important;
+  color: var(--text-dim) !important;
+  font-family: var(--font-main) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  padding: 12px 22px !important;
+  cursor: pointer;
+  transition: color 0.2s !important;
+  border-bottom: 2px solid transparent !important;
+}
+
+.custom-tabs .tab:hover {
+  color: var(--text) !important;
+}
+
+.custom-tabs .tab--selected {
+  background: transparent !important;
+  color: var(--accent1) !important;
+  border-bottom: 2px solid var(--accent1) !important;
+}
+
+.custom-tabs .tab-container {
+  border-bottom: 1px solid var(--border) !important;
+  margin-bottom: 24px !important;
+  background: transparent !important;
+}
+
+.custom-tabs .content--selected {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* ── Chart Cards ─────────────────────────────────────────────────────────── */
+.chart-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.chart-card:hover { border-color: var(--border2); }
+
+.chart-card-title {
+  font-family: var(--font-head);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.5px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-card-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 16px;
+  background: var(--accent1);
+  border-radius: 2px;
+}
+
+/* ── 2-Column Grid ───────────────────────────────────────────────────────── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+
+@media (max-width: 900px) {
+  .two-col, .three-col { grid-template-columns: 1fr; }
+}
+
+/* ── Model Metrics Table ─────────────────────────────────────────────────── */
+.dash-table-container .dash-spreadsheet-container {
+  background: transparent !important;
+}
+
+.dash-table-container .dash-header {
+  background: var(--card2) !important;
+  color: var(--accent1) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px !important;
+  border-color: var(--border) !important;
+}
+
+.dash-table-container .dash-cell {
+  background: var(--card) !important;
+  color: var(--text) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+  border-color: var(--border) !important;
+}
+
+.dash-table-container .dash-cell:hover {
+  background: var(--card2) !important;
+}
+
+/* ── Built-in Dash loading override (minor callbacks) ───────────────────── */
+._dash-loading-callback { background: rgba(6,11,20,0.5) !important; }
+._dash-loading-callback ._dash-loading { border-top-color: var(--accent1) !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CUSTOM CIRCULAR LOADER
+   ───────────────────────────────────────────────────────────────────────────
+   Structure (Python side):
+     .loader-wrapper
+       div.loader-ring-wrap          ← relative container, 160×160
+         .orbit-loader               ← SPINS: 24 tick marks
+           div × 24                  ← individual ticks
+         .loader-center-text         ← STATIC: sits on top, doesn't spin
+           .loader-progress-num      ← "72"
+           .loader-progress-label    ← "ANALYSING"
+       .loader-subtext               ← bottom status line
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Full-screen overlay */
+.loader-wrapper {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  z-index: 9999;
+  background: rgba(6, 11, 20, 0.86);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Relative wrapper so center-text can be positioned over the ring */
+.loader-ring-wrap {
+  position: relative;
+  width: 160px;
+  height: 160px;
+}
+
+/* ── Spinning tick ring ───────────────────────────────────────────────────── */
+.orbit-loader {
+  position: absolute;
+  inset: 0;
+  animation: loader-spin 1.6s linear infinite;
+}
+
+/* Each tick — a small rounded pill */
+.orbit-loader > div {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 13px;
+  margin-left: -1.5px;
+  margin-top: -80px;          /* radius = 80px, so tip starts at center  */
+  border-radius: 2px;
+  transform-origin: 1.5px 80px;  /* rotate around the ring centre         */
+  background: var(--accent1);
+  opacity: 0.05;              /* default: nearly invisible                */
+}
+
+/* ── Bright "leading arc" — first 8 ticks glow, rest fade to invisible ──── */
+/* Tick 1 = front of sweep = maximum glow */
+.orbit-loader > div:nth-child(1) {
+  transform: rotate(0deg);
+  opacity: 1;
+  box-shadow: 0 0 12px 4px rgba(0,200,255,0.95),
+              0 0 24px 8px rgba(0,200,255,0.45);
+}
+.orbit-loader > div:nth-child(2)  { transform: rotate(15deg);  opacity: 0.88; box-shadow: 0 0 9px 3px rgba(0,200,255,0.7); }
+.orbit-loader > div:nth-child(3)  { transform: rotate(30deg);  opacity: 0.72; box-shadow: 0 0 7px 2px rgba(0,200,255,0.5); }
+.orbit-loader > div:nth-child(4)  { transform: rotate(45deg);  opacity: 0.55; box-shadow: 0 0 5px 1px rgba(0,200,255,0.35); }
+.orbit-loader > div:nth-child(5)  { transform: rotate(60deg);  opacity: 0.38; }
+.orbit-loader > div:nth-child(6)  { transform: rotate(75deg);  opacity: 0.24; }
+.orbit-loader > div:nth-child(7)  { transform: rotate(90deg);  opacity: 0.14; }
+.orbit-loader > div:nth-child(8)  { transform: rotate(105deg); opacity: 0.09; }
+.orbit-loader > div:nth-child(9)  { transform: rotate(120deg); opacity: 0.06; }
+.orbit-loader > div:nth-child(10) { transform: rotate(135deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(11) { transform: rotate(150deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(12) { transform: rotate(165deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(13) { transform: rotate(180deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(14) { transform: rotate(195deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(15) { transform: rotate(210deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(16) { transform: rotate(225deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(17) { transform: rotate(240deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(18) { transform: rotate(255deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(19) { transform: rotate(270deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(20) { transform: rotate(285deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(21) { transform: rotate(300deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(22) { transform: rotate(315deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(23) { transform: rotate(330deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(24) { transform: rotate(345deg); opacity: 0.05; }
+
+@keyframes loader-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Centre text — static, overlaid on the ring ─────────────────────────── */
+.loader-center-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  /* Do NOT spin — this is a sibling of .orbit-loader, not a child */
+}
+
+.loader-progress-num {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent1);
+  line-height: 1;
+  letter-spacing: -1px;
+  text-shadow: 0 0 20px rgba(0,200,255,0.7),
+               0 0 40px rgba(0,200,255,0.3);
+}
+
+.loader-progress-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-top: 5px;
+}
+
+/* ── Bottom status line ──────────────────────────────────────────────────── */
+.loader-subtext {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  animation: loader-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes loader-blink {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1; color: var(--accent1); }
+}
+
+/* ── Status Badge ────────────────────────────────────────────────────────── */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+}
+
+.status-badge.live {
+  background: rgba(0,229,160,0.12);
+  border: 1px solid rgba(0,229,160,0.3);
+  color: var(--positive);
+}
+
+.status-badge.live::before {
+  content: '';
+  width: 7px; height: 7px;
+  background: var(--positive);
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0,229,160,0.4); }
+  50%       { opacity: 0.7; box-shadow: 0 0 0 5px rgba(0,229,160,0); }
+}
+
+/* ── Best Model Highlight ────────────────────────────────────────────────── */
+.best-model-card {
+  background: linear-gradient(135deg, rgba(0,200,255,0.08), rgba(123,47,255,0.08));
+  border: 1px solid rgba(0,200,255,0.3);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.best-model-card::before {
+  content: '★ BEST MODEL';
+  position: absolute;
+  top: 10px; right: 14px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: 1.5px;
+  color: var(--accent4);
+}
+
+/* ── Feature Importance Bar ──────────────────────────────────────────────── */
+.fi-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.fi-bar-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 180px;
+  text-align: right;
+}
+
+.fi-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--bg2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fi-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent1), var(--accent2));
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.fi-bar-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 50px;
+}
+
+/* ── Tooltip override ────────────────────────────────────────────────────── */
+.hoverlayer .hovertext {
+  background: var(--card2) !important;
+  border: 1px solid var(--border2) !important;
+  color: var(--text) !important;
+  font-family: var(--font-mono) !important;
+}
+
+/* ── Info Alert ──────────────────────────────────────────────────────────── */
+.info-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(0,200,255,0.06);
+  border: 1px solid rgba(0,200,255,0.2);
+  border-radius: 10px;
+  margin-bottom: 20px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* ── Spinner text ────────────────────────────────────────────────────────── */
+.loading-text {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+/* ── Forecast section ────────────────────────────────────────────────────── */
+.forecast-days-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.forecast-day-btn {
+  padding: 6px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--border2);
+  background: var(--card2);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.forecast-day-btn.active,
+.forecast-day-btn:hover {
+  background: rgba(0,200,255,0.1);
+  border-color: var(--accent1);
+  color: var(--accent1);
+}
+
+/* ── Responsiveness ──────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .header-title { font-size: 22px; }
+  .control-bar  { flex-direction: column; }
+  .kpi-row      { grid-template-columns: repeat(2, 1fr); }
+  .page-wrapper { padding: 0 12px 20px; }
+}
