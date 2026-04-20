@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore")
 import json
 import traceback
 from datetime import datetime, timedelta
+from clean_stock_data import clean_stock_data_for_dashboard
 
 import numpy as np
 import pandas as pd
@@ -304,7 +305,8 @@ def run_analysis(n_clicks, ticker, start_date, end_date, horizon, future_days, d
             df = load_static_dataset()
             company = get_company_info(ticker)
         else:
-            df = load_full_dataset(ticker, start_date, end_date)
+            # Use teammate’s cleaner instead of raw loader
+            df = clean_stock_data_for_dashboard(ticker, start_date, end_date)
             company = get_company_info(ticker)
 
         # 2. Feature engineering
@@ -466,7 +468,7 @@ def show_loader(n_intervals, analysis_done):
     if analysis_done:
         return None, True
 
-    # Animate up to 97%% so it never falsely hits 100%% before done
+    # Animate up to 97% so it never falsely hits 100% before done
     progress = min(n_intervals * 3, 97)
     loader = html.Div([
         # Ring + centre-text wrapped together so the text can be
@@ -477,7 +479,7 @@ def show_loader(n_intervals, analysis_done):
                      children=[html.Div() for _ in range(24)]),
             # Centre text — static sibling, NOT a child of orbit-loader
             html.Div(className="loader-center-text", children=[
-                html.Div(f"{progress}%%", className="loader-progress-num"),
+                html.Div(f"{progress}%", className="loader-progress-num"),
                 html.Div("Analysing", className="loader-progress-label"),
             ]),
         ]),

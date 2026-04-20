@@ -1,0 +1,30 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python cache
+_pycache_/
+*.py[cod]
+*.pyo
+
+# Training data (add your own images locally, don't push them)
+data/
+
+# Environment variables
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Logs
+*.log
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
