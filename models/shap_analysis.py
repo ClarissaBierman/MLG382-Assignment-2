@@ -2,18 +2,12 @@
 shap_analysis.py  — Model Interpretability with SHAP Values
 ═════════════════════════════════════════════════════════════
 OWNER:  Role 4 — Unsupervised Learning & Interpretability Specialist
-STATUS: NEW FILE — implement everything below.
+STATUS: COMPLETE
 
-SHAP (SHapley Additive exPlanations) tells us *why* the model made a
-specific prediction. For a stock price prediction tool, this answers:
-  "Why does the model predict AAPL will rise tomorrow?"
-  → "Because RSI is oversold (Lag1 pushed it up by +$2.10), and VIX
-     dropped (reducing fear, adding +$1.30)."
+Computes SHAP values to explain why the model makes each prediction.
 
-This output is shown in the "SHAP Insights" tab of the Dash dashboard.
-The dashboard stub is in app.py — build_shap_tab() — waiting for you.
-
-Install shap:  pip install shap
+Install:  pip install shap
+Then add  shap  to requirements.txt
 """
 
 import numpy as np
@@ -26,11 +20,11 @@ try:
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
-    print("WARNING: shap not installed. Run: pip install shap")
+    print("WARNING: shap not installed. Run:  pip install shap")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Interpretability Specialist): implement compute_shap_values
+# Section 1 — Compute SHAP values
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_shap_values(model, X_train: pd.DataFrame,
@@ -39,55 +33,104 @@ def compute_shap_values(model, X_train: pd.DataFrame,
     """
     Compute SHAP values for a fitted model on the test set.
 
-    Use the appropriate explainer:
-      - Tree-based (RF, XGBoost, GBM) → shap.TreeExplainer  (fast, exact)
-      - Linear models                 → shap.LinearExplainer
-      - Fallback                      → shap.KernelExplainer (slow, sample 100 rows)
+    Explainer selection:
+      - RandomForest, XGBoost, GradientBoosting → TreeExplainer  (fast, exact)
+      - LinearRegression, Ridge (Pipeline)       → LinearExplainer
+      - Everything else                          → KernelExplainer (slow, 100 rows)
 
-    For Pipeline models, extract the inner estimator via
-    model.named_steps["model"] before passing to the explainer.
+    Parameters
+    ----------
+    model      : fitted sklearn estimator or Pipeline
+    X_train    : training features (background data for explainer)
+    X_test     : test features to explain
+    model_name : string label (for display)
 
-    Returns a dict with:
-      "shap_values"    : np.ndarray shape (n_test_samples, n_features)
-      "expected_value" : float — base value (mean prediction)
-      "X_test"         : pd.DataFrame — test features (for waterfall/beeswarm)
-      "model_name"     : str
-      "feature_names"  : list[str]
+    Returns
+    -------
+    dict with keys:
+        shap_values, expected_value, X_test, model_name, feature_names
     """
     if not SHAP_AVAILABLE:
-        raise ImportError("shap package not installed. Run: pip install shap")
+        raise ImportError("shap not installed. Run:  pip install shap")
 
-    # TODO: implement
-    # Hint: For Pipeline, do:
-    #   inner = model.named_steps.get("model", model)
-    #   Then branch on type(inner).__name__ to choose explainer.
-    raise NotImplementedError(
-        "compute_shap_values not implemented — Interpretability Specialist task"
-    )
+    feature_names = list(X_test.columns)
+
+    # Unwrap Pipeline to get the inner estimator
+    inner = model
+    if hasattr(model, "named_steps"):
+        inner = model.named_steps.get("model", model)
+
+    model_type = type(inner).__name__
+
+    # Choose the right explainer
+    if model_type in ("RandomForestRegressor",
+                      "XGBRegressor",
+                      "GradientBoostingRegressor",
+                      "DecisionTreeRegressor"):
+        explainer   = shap.TreeExplainer(inner)
+        shap_values = explainer.shap_values(X_test)
+        expected    = float(explainer.expected_value
+                            if np.isscalar(explainer.expected_value)
+                            else explainer.expected_value[0])
+
+    elif model_type in ("LinearRegression", "Ridge", "Lasso", "ElasticNet"):
+        # For Pipelines, transform X_train/X_test through the scaler first
+        if hasattr(model, "named_steps") and "scaler" in model.named_steps:
+            sc = model.named_steps["scaler"]
+            X_tr_sc = sc.transform(X_train)
+            X_te_sc = sc.transform(X_test)
+        else:
+            X_tr_sc = X_train.values
+            X_te_sc = X_test.values
+
+        explainer   = shap.LinearExplainer(inner, X_tr_sc)
+        shap_values = explainer.shap_values(X_te_sc)
+        expected    = float(explainer.expected_value)
+
+    else:
+        # Kernel explainer — slow, use a 100-row sample as background
+        background = shap.sample(X_train, min(100, len(X_train)), random_state=42)
+        explainer  = shap.KernelExplainer(model.predict, background)
+        shap_values = explainer.shap_values(X_test.iloc[:200])   # limit to 200 rows
+        expected    = float(explainer.expected_value)
+
+    # Ensure 2-D (some explainers return 1-D for single output)
+    if shap_values.ndim == 1:
+        shap_values = shap_values.reshape(1, -1)
+
+    return {
+        "shap_values":    shap_values,
+        "expected_value": expected,
+        "X_test":         X_test,
+        "model_name":     model_name,
+        "feature_names":  feature_names,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Interpretability Specialist): implement get_global_importance
+# Section 2 — Global feature importance
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_global_importance(shap_values: np.ndarray,
                            feature_names: list,
                            top_n: int = 20) -> pd.DataFrame:
     """
-    Compute global SHAP feature importance = mean(|SHAP|) per feature.
+    Global importance = mean(|SHAP|) per feature, sorted descending.
 
-    Returns a DataFrame sorted descending:
-        columns: ["feature", "mean_abs_shap"]
-        rows:    top_n features
+    Returns
+    -------
+    pd.DataFrame with columns: feature, mean_abs_shap
     """
-    # TODO: implement
-    raise NotImplementedError(
-        "get_global_importance not implemented — Interpretability Specialist task"
-    )
+    mean_abs = np.abs(shap_values).mean(axis=0)
+    df = pd.DataFrame({
+        "feature":       feature_names,
+        "mean_abs_shap": mean_abs,
+    }).sort_values("mean_abs_shap", ascending=False).head(top_n).reset_index(drop=True)
+    return df
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Interpretability Specialist): implement get_local_explanation
+# Section 3 — Local (single-prediction) explanation
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_local_explanation(shap_values: np.ndarray,
@@ -95,70 +138,102 @@ def get_local_explanation(shap_values: np.ndarray,
                            sample_idx: int,
                            top_n: int = 10) -> pd.DataFrame:
     """
-    Explain a single prediction (waterfall chart data).
+    Waterfall chart data for one prediction.
 
-    For sample at `sample_idx` in X_test, return the top_n features
-    with their SHAP contribution and actual feature value.
-
-    Returns a DataFrame:
-        columns: ["feature", "shap_value", "feature_value", "direction"]
-        direction: "positive" or "negative" (sign of shap_value)
-        sorted by |shap_value| descending
+    Returns
+    -------
+    pd.DataFrame with columns:
+        feature, shap_value, feature_value, direction
+    Sorted by |shap_value| descending.
     """
-    # TODO: implement
-    raise NotImplementedError(
-        "get_local_explanation not implemented — Interpretability Specialist task"
-    )
+    row_shap  = shap_values[sample_idx]
+    row_feats = X_test.iloc[sample_idx]
+    feature_names = list(X_test.columns)
+
+    df = pd.DataFrame({
+        "feature":       feature_names,
+        "shap_value":    row_shap,
+        "feature_value": row_feats.values,
+    })
+    df["abs_shap"]  = df["shap_value"].abs()
+    df["direction"] = df["shap_value"].apply(lambda v: "positive" if v >= 0 else "negative")
+    df = df.sort_values("abs_shap", ascending=False).head(top_n).reset_index(drop=True)
+    return df[["feature", "shap_value", "feature_value", "direction"]]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Interpretability Specialist): interpret cluster drivers
+# Section 4 — Cluster-level SHAP summary
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_cluster_shap_summary(model, X_by_cluster: dict,
                               X_train: pd.DataFrame) -> dict:
     """
-    Compute mean SHAP values separately for each market regime cluster.
-
-    This reveals: "In bearish regimes, which features drive down predictions?"
-    vs "In bullish regimes, which features push predictions up?"
+    Mean SHAP values per market-regime cluster.
 
     Parameters
     ----------
-    model       : fitted estimator (best model from StockModelTrainer)
-    X_by_cluster: dict mapping cluster_id → pd.DataFrame of test rows
-                  in that cluster.  Build this from clustering labels.
-    X_train     : full training set (for TreeExplainer background data)
+    model        : fitted estimator (best model from StockModelTrainer)
+    X_by_cluster : dict  {cluster_id: pd.DataFrame of test rows in that cluster}
+    X_train      : full training DataFrame (background for TreeExplainer)
 
     Returns
     -------
-    dict mapping cluster_id → pd.DataFrame with columns
-        ["feature", "mean_shap", "mean_abs_shap"]
-    sorted by mean_abs_shap descending.
+    dict mapping cluster_id → pd.DataFrame with columns:
+        feature, mean_shap, mean_abs_shap
+    Sorted by mean_abs_shap descending.
     """
-    # TODO: implement
-    raise NotImplementedError(
-        "get_cluster_shap_summary not implemented — Interpretability Specialist task"
-    )
+    if not SHAP_AVAILABLE:
+        raise ImportError("shap not installed. Run:  pip install shap")
+
+    inner = model
+    if hasattr(model, "named_steps"):
+        inner = model.named_steps.get("model", model)
+
+    # Build one explainer for all clusters
+    model_type = type(inner).__name__
+    if model_type in ("RandomForestRegressor", "XGBRegressor",
+                      "GradientBoostingRegressor"):
+        explainer = shap.TreeExplainer(inner)
+    else:
+        background = shap.sample(X_train, min(100, len(X_train)), random_state=42)
+        explainer  = shap.KernelExplainer(model.predict, background)
+
+    summaries = {}
+    for cid, X_c in X_by_cluster.items():
+        if len(X_c) == 0:
+            continue
+        sv = explainer.shap_values(X_c)
+        if sv.ndim == 1:
+            sv = sv.reshape(1, -1)
+
+        df = pd.DataFrame({
+            "feature":       list(X_c.columns),
+            "mean_shap":     sv.mean(axis=0),
+            "mean_abs_shap": np.abs(sv).mean(axis=0),
+        }).sort_values("mean_abs_shap", ascending=False).reset_index(drop=True)
+        summaries[cid] = df
+
+    return summaries
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Convenience wrapper used by app.py  (do not rename or change signature)
+# Convenience wrapper  (called by app.py — do not rename)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_shap_analysis(trainer,          # StockModelTrainer instance
-                       model_name: str = None) -> dict:
+def run_shap_analysis(trainer, model_name: str = None) -> dict:
     """
-    Full SHAP pipeline for the best (or specified) trained model.
-    Called by the Dash callback in app.py.
+    Full SHAP pipeline for the best (or named) trained model.
 
-    Returns a dict with keys:
-      "shap_values"      : np.ndarray
-      "expected_value"   : float
-      "X_test"           : pd.DataFrame
-      "feature_names"    : list[str]
-      "global_importance": pd.DataFrame  — from get_global_importance()
-      "model_name"       : str
+    Parameters
+    ----------
+    trainer    : fitted StockModelTrainer instance
+    model_name : override which model to explain (default = trainer.best_model_name)
+
+    Returns
+    -------
+    dict with keys:
+        shap_values, expected_value, X_test, feature_names,
+        global_importance, model_name
     """
     if model_name is None:
         model_name = trainer.best_model_name

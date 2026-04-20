@@ -1,21 +1,12 @@
 """
 clustering.py  — CRISP-DM Phase 4: Unsupervised Segmentation
 ═════════════════════════════════════════════════════════════
-OWNER:  Role 4 — Unsupervised Learning & Interpretability Specialist
-STATUS: NEW FILE — implement everything below.
+Segments market conditions into 3 "regimes" using K-Means clustering.
+Results feed the "Market Regimes" tab in the Dash dashboard.
 
-Your task is to segment market conditions into distinct "regimes" using
-K-Means clustering. The clusters will be shown in the Dash dashboard's
-"Market Regimes" tab (see app.py — build_regimes_tab is a stub waiting
-for your output).
-
-Cluster meaning (target interpretation, 3 clusters):
-  Cluster 0 — Low-volatility / bullish trend
-  Cluster 1 — High-volatility / uncertain
-  Cluster 2 — Bearish / drawdown regime
-
-These labels give traders context: "the model predicts a rise, but we
-are currently in a high-volatility regime — treat with caution."
+  Cluster 0 — Bullish / Low-Volatility
+  Cluster 1 — High-Volatility / Uncertain
+  Cluster 2 — Bearish / Drawdown
 """
 
 import numpy as np
@@ -26,163 +17,223 @@ from sklearn.metrics import silhouette_score
 import warnings
 warnings.filterwarnings("ignore")
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# CONSTANTS — do not change (app.py references these)
+# Constants  (app.py references these — do not rename)
 # ─────────────────────────────────────────────────────────────────────────────
 
 N_CLUSTERS   = 3
 RANDOM_STATE = 42
 
-# Human-readable labels and colours for the dashboard
 CLUSTER_LABELS = {
     0: "Bullish / Low-Vol",
     1: "High-Vol / Uncertain",
     2: "Bearish / Drawdown",
 }
 CLUSTER_COLORS = {
-    0: "#00e5a0",   # green
-    1: "#ffc440",   # amber
-    2: "#ff4d6d",   # red
+    0: "#00e5a0",
+    1: "#ffc440",
+    2: "#ff4d6d",
 }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Interpretability Specialist): implement build_cluster_features
+# Section 1 — Feature engineering for clustering
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_cluster_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Select and engineer features for K-Means clustering.
-    The goal is to characterise each trading day by its market *regime*.
-
-    Suggested features (you may add more):
-      - Daily_Return  (Close.pct_change())
-      - HV_5          (5-day rolling std of log returns * sqrt(252))
-      - HV_21         (21-day rolling std)
-      - Volume_Ratio  (Volume / 20-day SMA of Volume)
-      - RSI_14        (if present in df)
-      - BB_Pct        (position within Bollinger Bands, 0–1)
-      - SP500_Return  (broad market context, if present in df)
-      - VIX           (fear index, if present in df)
+    Build a feature matrix that characterises each trading day's market regime.
 
     Parameters
     ----------
-    df : pd.DataFrame
-        OHLCV + indicator DataFrame produced by add_technical_indicators().
-        May already contain RSI_14, BB_Pct, Volume_Ratio etc.
+    df : OHLCV + indicator DataFrame from add_technical_indicators().
 
     Returns
     -------
-    pd.DataFrame
-        Rows aligned with df.index (NaN rows dropped), columns = cluster features.
+    pd.DataFrame with NaN rows dropped, ready for StandardScaler + KMeans.
     """
-    # TODO: implement
-    # Hint: compute any missing features from df["Close"], df["Volume"] etc.
-    #       Drop rows with NaN after computing rolling windows.
-    raise NotImplementedError(
-        "build_cluster_features not implemented — Interpretability Specialist task"
-    )
+    feat = pd.DataFrame(index=df.index)
+
+    # Daily return
+    feat["Daily_Return"] = df["Close"].pct_change() * 100
+
+    # Short-term & medium-term historical volatility
+    log_r = np.log(df["Close"] / df["Close"].shift(1))
+    feat["HV_5"]  = log_r.rolling(5,  min_periods=5).std()  * np.sqrt(252) * 100
+    feat["HV_21"] = log_r.rolling(21, min_periods=21).std() * np.sqrt(252) * 100
+
+    # Volume ratio (use pre-computed column if available)
+    if "Volume_Ratio" in df.columns:
+        feat["Volume_Ratio"] = df["Volume_Ratio"]
+    else:
+        v_sma = df["Volume"].rolling(20, min_periods=1).mean()
+        feat["Volume_Ratio"] = df["Volume"] / (v_sma + 1e-9)
+
+    # Momentum — RSI
+    if "RSI_14" in df.columns:
+        feat["RSI_14"] = df["RSI_14"]
+    else:
+        # Compute inline if not present
+        delta = df["Close"].diff()
+        gain  = delta.clip(lower=0).rolling(14, min_periods=1).mean()
+        loss  = (-delta.clip(upper=0)).rolling(14, min_periods=1).mean()
+        rs    = gain / (loss + 1e-9)
+        feat["RSI_14"] = 100 - (100 / (1 + rs))
+
+    # Bollinger %B position
+    if "BB_Pct" in df.columns:
+        feat["BB_Pct"] = df["BB_Pct"]
+    else:
+        sma20 = df["Close"].rolling(20, min_periods=1).mean()
+        std20 = df["Close"].rolling(20, min_periods=1).std()
+        upper = sma20 + 2 * std20
+        lower = sma20 - 2 * std20
+        feat["BB_Pct"] = (df["Close"] - lower) / (upper - lower + 1e-9)
+
+    # Market sentiment — VIX (if available)
+    if "VIX" in df.columns:
+        feat["VIX"] = df["VIX"]
+
+    # Broad market context — S&P 500 return (if available)
+    if "SP500_Return" in df.columns:
+        feat["SP500_Return"] = df["SP500_Return"] * 100
+
+    feat.dropna(inplace=True)
+    return feat
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Interpretability Specialist): implement fit_kmeans
+# Section 2 — K-Means fitting
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fit_kmeans(features: pd.DataFrame) -> tuple:
     """
-    Fit K-Means with N_CLUSTERS on the provided feature matrix.
-
-    Steps:
-      1. Scale features with StandardScaler (fit on features).
-      2. Fit KMeans(n_clusters=N_CLUSTERS, random_state=RANDOM_STATE, n_init=10).
-      3. Compute silhouette_score on the scaled data.
-      4. Compute cluster-centre summary (inverse-transform centres for interpretability).
+    Scale → KMeans(k=3) → silhouette → cluster centres.
 
     Returns
     -------
-    labels      : np.ndarray  — cluster label per row (0, 1, or 2)
+    labels      : np.ndarray — cluster label per row (after re-ordering by mean return)
     scaler      : fitted StandardScaler
     kmeans      : fitted KMeans object
-    silhouette  : float  — silhouette score (printed in app as model quality)
-    centres_df  : pd.DataFrame  — cluster centres in original feature scale,
-                                   rows = cluster ids, columns = feature names
+    silhouette  : float
+    centres_df  : pd.DataFrame — centres in original feature scale
     """
-    # TODO: implement
-    raise NotImplementedError(
-        "fit_kmeans not implemented — Interpretability Specialist task"
+    scaler = StandardScaler()
+    X_sc   = scaler.fit_transform(features.values)
+
+    km = KMeans(n_clusters=N_CLUSTERS, random_state=RANDOM_STATE, n_init=10)
+    raw_labels = km.fit_predict(X_sc)
+
+    # Re-order so cluster 0 = best return, cluster 2 = worst return
+    ret_col = features.columns.get_loc("Daily_Return") if "Daily_Return" in features.columns else 0
+    mean_ret = {c: features.values[raw_labels == c, ret_col].mean() for c in range(N_CLUSTERS)}
+    order = sorted(mean_ret, key=mean_ret.get, reverse=True)
+    remap = {old: new for new, old in enumerate(order)}
+    labels = np.array([remap[l] for l in raw_labels])
+
+    # Silhouette score
+    try:
+        sil = float(silhouette_score(X_sc, labels))
+    except Exception:
+        sil = float("nan")
+
+    # Cluster centres in original scale
+    centres_orig = scaler.inverse_transform(km.cluster_centers_)
+    # Re-order rows to match new label mapping
+    reorder_idx  = [order.index(c) for c in range(N_CLUSTERS)]
+    centres_df   = pd.DataFrame(
+        centres_orig[reorder_idx],
+        columns=features.columns,
+        index=[CLUSTER_LABELS[i] for i in range(N_CLUSTERS)],
     )
+
+    return labels, scaler, km, sil, centres_df
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Interpretability Specialist): implement get_cluster_statistics
+# Section 3 — Cluster summary statistics
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_cluster_statistics(df_features: pd.DataFrame,
                             labels: np.ndarray) -> pd.DataFrame:
     """
-    Summarise each cluster with descriptive statistics.
-
-    Returns a DataFrame with one row per cluster containing:
-      - Count         : number of trading days in cluster
-      - % of Days     : proportion of all days
-      - Mean Return   : average daily return in that regime
-      - Mean HV_21    : average historical volatility
-      - Mean RSI      : average RSI_14 (if present)
-      - Label         : human-readable name from CLUSTER_LABELS
+    Returns one summary row per cluster.
     """
-    # TODO: implement
-    raise NotImplementedError(
-        "get_cluster_statistics not implemented — Interpretability Specialist task"
-    )
+    rows = []
+    n_total = len(labels)
+
+    for cid in range(N_CLUSTERS):
+        mask = labels == cid
+        subset = df_features[mask]
+
+        row = {
+            "Cluster":       cid,
+            "Label":         CLUSTER_LABELS[cid],
+            "Count":         int(mask.sum()),
+            "% of Days":     round(mask.sum() / n_total * 100, 1),
+            "Mean Return":   round(float(subset["Daily_Return"].mean()), 4)
+                             if "Daily_Return" in subset.columns else None,
+            "Mean HV_21":    round(float(subset["HV_21"].mean()), 4)
+                             if "HV_21" in subset.columns else None,
+            "Mean RSI":      round(float(subset["RSI_14"].mean()), 2)
+                             if "RSI_14" in subset.columns else None,
+        }
+        rows.append(row)
+
+    return pd.DataFrame(rows).set_index("Cluster")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Interpretability Specialist): implement elbow_analysis
+# Section 4 — Elbow analysis (justify k=3)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def elbow_analysis(features: pd.DataFrame,
                    k_range: range = range(2, 9)) -> pd.DataFrame:
     """
-    Compute inertia and silhouette score for each k in k_range.
-    Used to justify the choice of k=3 in the Technical Report.
-
-    Returns a DataFrame with columns:
-        k, inertia, silhouette_score
+    Compute inertia and silhouette score for k = 2 … 8.
     """
-    # TODO: implement
-    raise NotImplementedError(
-        "elbow_analysis not implemented — Interpretability Specialist task"
-    )
+    scaler = StandardScaler()
+    X_sc   = scaler.fit_transform(features.values)
+
+    records = []
+    for k in k_range:
+        km = KMeans(n_clusters=k, random_state=RANDOM_STATE, n_init=10)
+        km.fit(X_sc)
+        try:
+            sil = float(silhouette_score(X_sc, km.labels_))
+        except Exception:
+            sil = float("nan")
+        records.append({
+            "k":               k,
+            "inertia":         float(km.inertia_),
+            "silhouette_score": sil,
+        })
+
+    return pd.DataFrame(records)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Convenience wrapper used by app.py  (do not rename or change signature)
+# Convenience wrapper  (called by app.py — do not rename)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_clustering(df_with_indicators: pd.DataFrame) -> dict:
     """
-    Full pipeline: features → fit → stats.
-    Called by the Dash callback in app.py.
+    Full pipeline: build features → fit KMeans → stats → elbow.
 
-    Returns a dict with keys:
-      "labels"       : np.ndarray aligned with df_with_indicators.dropna() index
-      "stats"        : pd.DataFrame from get_cluster_statistics()
-      "silhouette"   : float
-      "centres_df"   : pd.DataFrame
-      "feature_df"   : pd.DataFrame (features used)
-      "elbow_df"     : pd.DataFrame from elbow_analysis()
-      "index"        : DatetimeIndex — dates corresponding to labels
+    Returns
+    -------
+    dict with keys:
+        labels, stats, silhouette, centres_df, feature_df, elbow_df, index
     """
-    feat_df    = build_cluster_features(df_with_indicators)
-    labels, scaler, kmeans, silhouette, centres_df = fit_kmeans(feat_df)
-    stats      = get_cluster_statistics(feat_df, labels)
-    elbow_df   = elbow_analysis(feat_df)
+    feat_df = build_cluster_features(df_with_indicators)
+    labels, scaler, kmeans, sil, centres_df = fit_kmeans(feat_df)
+    stats    = get_cluster_statistics(feat_df, labels)
+    elbow_df = elbow_analysis(feat_df)
 
     return {
         "labels":      labels,
         "stats":       stats,
-        "silhouette":  silhouette,
+        "silhouette":  sil,
         "centres_df":  centres_df,
         "feature_df":  feat_df,
         "elbow_df":    elbow_df,

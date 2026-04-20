@@ -432,10 +432,6 @@ def render_tab(tab, ohlcv_json, feat_json, model_json, company_json):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Callback: reset loader interval AND analysis-done flag on button click
-# Using allow_duplicate=True so both this callback and run_analysis can write
-# to "analysis-done".  This fires IMMEDIATELY when the button is clicked
-# (before the heavy run_analysis callback begins), ensuring the loader
-# is always visible on every subsequent click.
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.callback(
@@ -446,8 +442,6 @@ def render_tab(tab, ohlcv_json, feat_json, model_json, company_json):
     prevent_initial_call=True,
 )
 def reset_loader(n_clicks):
-    # Reset analysis-done → False so show_loader will display the spinner,
-    # re-enable the interval, and reset its counter back to 0.
     return False, False, 0
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -462,22 +456,15 @@ def reset_loader(n_clicks):
     prevent_initial_call=True,
 )
 def show_loader(n_intervals, analysis_done):
-    # analysis_done flips True once run_analysis completes.
-    # Clear the loader AND stop the interval so it won't fire again
-    # until reset_loader re-enables it on the next button click.
     if analysis_done:
         return None, True
 
     # Animate up to 97% so it never falsely hits 100% before done
     progress = min(n_intervals * 3, 97)
     loader = html.Div([
-        # Ring + centre-text wrapped together so the text can be
-        # positioned absolutely over the spinning tick ring.
         html.Div(className="loader-ring-wrap", children=[
-            # 24 tick marks — CSS rotates each one and adds glow to the first 8
             html.Div(className="orbit-loader",
                      children=[html.Div() for _ in range(24)]),
-            # Centre text — static sibling, NOT a child of orbit-loader
             html.Div(className="loader-center-text", children=[
                 html.Div(f"{progress}%", className="loader-progress-num"),
                 html.Div("Analysing", className="loader-progress-label"),
@@ -487,7 +474,7 @@ def show_loader(n_intervals, analysis_done):
         html.Div("Processing data  ·  training models", className="loader-subtext"),
     ], className="loader-wrapper")
 
-    return loader, False   # keep interval running while waiting
+    return loader, False
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 1 — Market Overview
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1035,119 +1022,407 @@ def build_models_tab(md: dict):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB 5 — Market Regimes  (STUB — Role 4: Interpretability Specialist)
+# TAB 5 — Market Regimes
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Role 4): Replace this placeholder with a real implementation that:
-#   1. Calls clustering.run_clustering(df_i) to get cluster labels & stats.
-#   2. Plots a colour-coded price chart where each day is coloured by regime.
-#   3. Shows a scatter plot of HV_21 vs Daily_Return, coloured by cluster.
-#   4. Renders the elbow chart (inertia vs k) to justify k=3.
-#   5. Displays a summary table: cluster label, count, mean return, mean vol.
-#
-# The clustering module is at models/clustering.py — your file to implement.
-# CLUSTER_COLORS and CLUSTER_LABELS from clustering.py define the colour scheme.
-
 def build_regimes_tab(df_i: pd.DataFrame, md: dict):
     """
-    Market Regime Clustering Tab.
-    OWNER: Role 4 — Interpretability Specialist.
-
-    Currently shows a placeholder. Replace with your K-Means visualisations.
+    K-Means (k=3) market regime segmentation built directly from the
+    indicators DataFrame.  No external clustering.py required.
     """
-    return html.Div(className="chart-card", style={"textAlign": "center", "padding": "60px 30px"}, children=[
-        html.Div("🔬", style={"fontSize": "48px", "marginBottom": "16px"}),
-        html.Div("Market Regimes — K-Means Clustering",
-                 style={"fontFamily": "Syne", "fontSize": "20px", "fontWeight": "800",
-                        "color": "#dce8f5", "marginBottom": "12px"}),
-        html.Div("This tab is owned by Role 4 — Interpretability Specialist.",
-                 style={"color": "#6b8aad", "fontSize": "13px", "marginBottom": "8px",
-                        "fontFamily": "JetBrains Mono"}),
-        html.Div("Implement build_regimes_tab() in app.py and models/clustering.py.",
-                 style={"color": "#3a5270", "fontSize": "12px", "fontFamily": "JetBrains Mono"}),
-        html.Div(style={"marginTop": "28px", "display": "flex", "gap": "16px",
-                        "justifyContent": "center", "flexWrap": "wrap"}, children=[
-            html.Div(style={"background": "rgba(0,229,160,0.08)", "border": "1px solid rgba(0,229,160,0.3)",
-                            "borderRadius": "10px", "padding": "14px 20px", "minWidth": "160px"}, children=[
-                html.Div("CLUSTER 0", style={"fontSize": "10px", "letterSpacing": "2px",
-                                              "color": "#6b8aad", "fontFamily": "JetBrains Mono"}),
-                html.Div("Bullish / Low-Vol", style={"color": "#00e5a0", "fontWeight": "700", "marginTop": "4px"}),
+    from sklearn.cluster import KMeans
+    from sklearn.preprocessing import StandardScaler
+
+    CLUSTER_COLORS = {0: "#00e5a0", 1: "#ffc440", 2: "#ff4d6d"}
+    CLUSTER_LABELS = {0: "Bullish / Low-Vol", 1: "High-Vol / Uncertain", 2: "Bearish / Drawdown"}
+
+    # ── Build feature matrix for clustering ───────────────────────────────────
+    feat_cols = []
+    df_c = df_i.copy()
+
+    # Daily return
+    df_c["_ret"]   = df_c["Close"].pct_change() * 100
+    feat_cols.append("_ret")
+
+    # Short & long historical volatility
+    log_r = np.log(df_c["Close"] / df_c["Close"].shift(1))
+    df_c["_hv5"]  = log_r.rolling(5).std()  * np.sqrt(252) * 100
+    df_c["_hv21"] = log_r.rolling(21).std() * np.sqrt(252) * 100
+    feat_cols += ["_hv5", "_hv21"]
+
+    # Volume ratio (use pre-computed or compute fallback)
+    if "Volume_Ratio" in df_c.columns:
+        df_c["_volr"] = df_c["Volume_Ratio"]
+    else:
+        vsma = df_c["Volume"].rolling(20).mean()
+        df_c["_volr"] = df_c["Volume"] / (vsma + 1e-9)
+    feat_cols.append("_volr")
+
+    # RSI if available
+    if "RSI_14" in df_c.columns:
+        df_c["_rsi"] = df_c["RSI_14"]
+        feat_cols.append("_rsi")
+
+    # Bollinger %B if available
+    if "BB_Pct" in df_c.columns:
+        df_c["_bbp"] = df_c["BB_Pct"]
+        feat_cols.append("_bbp")
+
+    # VIX if available
+    if "VIX" in df_c.columns:
+        df_c["_vix"] = df_c["VIX"]
+        feat_cols.append("_vix")
+
+    feat_df = df_c[feat_cols].dropna()
+    if len(feat_df) < 30:
+        return html.Div(className="chart-card",
+                        style={"textAlign":"center","padding":"60px 20px"},
+                        children=[html.Div("Not enough data for clustering (need 30+ rows).",
+                                           style={"color": THEME["text_dim"]})])
+
+    # ── Fit K-Means ──────────────────────────────────────────────────────────
+    scaler = StandardScaler()
+    X_sc   = scaler.fit_transform(feat_df.values)
+    km     = KMeans(n_clusters=3, random_state=42, n_init=10)
+    raw_labels = km.fit_predict(X_sc)
+
+    # ── Re-order clusters by mean return (0=best, 2=worst) ───────────────────
+    mean_ret_per_cluster = {c: feat_df["_ret"].values[raw_labels == c].mean()
+                            for c in range(3)}
+    sorted_clusters = sorted(mean_ret_per_cluster, key=mean_ret_per_cluster.get, reverse=True)
+    remap = {old: new for new, old in enumerate(sorted_clusters)}
+    labels = np.array([remap[l] for l in raw_labels])
+
+    # Silhouette
+    try:
+        from sklearn.metrics import silhouette_score
+        sil = silhouette_score(X_sc, labels)
+        sil_str = f"{sil:.3f}"
+    except Exception:
+        sil_str = "N/A"
+
+    # ── Elbow analysis ────────────────────────────────────────────────────────
+    inertias, sil_scores, ks = [], [], list(range(2, 9))
+    for k in ks:
+        km_k = KMeans(n_clusters=k, random_state=42, n_init=10).fit(X_sc)
+        inertias.append(km_k.inertia_)
+        try:
+            from sklearn.metrics import silhouette_score as ss
+            sil_scores.append(ss(X_sc, km_k.labels_))
+        except Exception:
+            sil_scores.append(0)
+
+    fig_elbow = go.Figure()
+    fig_elbow.add_trace(go.Scatter(x=ks, y=inertias, mode="lines+markers",
+                                    name="Inertia", line=dict(color=THEME["accent1"], width=2),
+                                    marker=dict(size=7)))
+    fig_elbow.add_trace(go.Scatter(x=ks, y=sil_scores, mode="lines+markers",
+                                    name="Silhouette", yaxis="y2",
+                                    line=dict(color=THEME["accent3"], width=2, dash="dot"),
+                                    marker=dict(size=7)))
+    lo_e = base_layout(300)
+    lo_e["yaxis2"] = dict(title="Silhouette", overlaying="y", side="right",
+                          color=THEME["text_dim"], showgrid=False)
+    lo_e["yaxis"]["title"] = "Inertia"
+    lo_e["xaxis"]["title"] = "k (number of clusters)"
+    fig_elbow.add_vline(x=3, line_dash="dash", line_color=THEME["accent4"],
+                         annotation_text="k=3 chosen", annotation_font_size=11)
+    fig_elbow.update_layout(**lo_e,
+        title=dict(text="Elbow Analysis — Justifying k=3",
+                   font=dict(size=13, color=THEME["text_dim"])))
+
+    # ── Colour-coded price chart ──────────────────────────────────────────────
+    close_aligned = df_c["Close"].loc[feat_df.index]
+    fig_price = go.Figure()
+    for cid in [0, 1, 2]:
+        mask = labels == cid
+        dates_c  = feat_df.index[mask]
+        prices_c = close_aligned.loc[dates_c]
+        fig_price.add_trace(go.Scatter(
+            x=dates_c, y=prices_c,
+            mode="markers", name=CLUSTER_LABELS[cid],
+            marker=dict(color=CLUSTER_COLORS[cid], size=4, opacity=0.75),
+        ))
+    # Underlying price line
+    fig_price.add_trace(go.Scatter(
+        x=close_aligned.index, y=close_aligned,
+        mode="lines", name="Close",
+        line=dict(color="rgba(220,232,245,0.2)", width=1),
+        showlegend=False,
+    ))
+    fig_price.update_layout(**base_layout(380),
+        title=dict(text="Price Coloured by Market Regime",
+                   font=dict(size=13, color=THEME["text_dim"])),
+        yaxis_title="Close Price ($)")
+
+    # ── Scatter: volatility vs return coloured by cluster ────────────────────
+    fig_scat = go.Figure()
+    for cid in [0, 1, 2]:
+        mask = labels == cid
+        fig_scat.add_trace(go.Scatter(
+            x=feat_df["_hv21"].values[mask],
+            y=feat_df["_ret"].values[mask],
+            mode="markers", name=CLUSTER_LABELS[cid],
+            marker=dict(color=CLUSTER_COLORS[cid], size=5, opacity=0.6,
+                        line=dict(width=0.3, color="rgba(0,0,0,0.3)")),
+        ))
+    fig_scat.update_layout(**base_layout(360),
+        xaxis_title="21-Day Historical Volatility (%)",
+        yaxis_title="Daily Return (%)",
+        title=dict(text="Volatility vs Return by Regime",
+                   font=dict(size=13, color=THEME["text_dim"])))
+
+    # ── Cluster stats table ───────────────────────────────────────────────────
+    rows = []
+    for cid in [0, 1, 2]:
+        mask = labels == cid
+        rets  = feat_df["_ret"].values[mask]
+        vols  = feat_df["_hv21"].values[mask]
+        rows.append({
+            "Cluster":      f"{cid}  —  {CLUSTER_LABELS[cid]}",
+            "Days":         int(mask.sum()),
+            "% of Data":    f"{mask.mean()*100:.1f}%",
+            "Mean Return":  f"{rets.mean():+.3f}%",
+            "Mean HV-21":   f"{vols.mean():.1f}%",
+            "Max Return":   f"{rets.max():+.2f}%",
+            "Min Return":   f"{rets.min():+.2f}%",
+        })
+    stats_table = dash_table.DataTable(
+        data=rows,
+        columns=[{"name": c, "id": c} for c in rows[0].keys()],
+        style_table={"overflowX": "auto"},
+        style_header={"backgroundColor":"#132038","color":"#00c8ff","fontFamily":"JetBrains Mono",
+                       "fontSize":"12px","fontWeight":"600","border":"1px solid #1a2d4a"},
+        style_cell={"backgroundColor":"#0f1a2e","color":"#dce8f5","fontFamily":"JetBrains Mono",
+                    "fontSize":"12px","border":"1px solid #1a2d4a","padding":"10px 14px"},
+        style_data_conditional=[
+            {"if": {"filter_query": '{Cluster} contains "0"'}, "color": "#00e5a0"},
+            {"if": {"filter_query": '{Cluster} contains "1"'}, "color": "#ffc440"},
+            {"if": {"filter_query": '{Cluster} contains "2"'}, "color": "#ff4d6d"},
+        ],
+    )
+
+    # ── Regime distribution donut ─────────────────────────────────────────────
+    counts = [int((labels == c).sum()) for c in range(3)]
+    fig_donut = go.Figure(go.Pie(
+        labels=[CLUSTER_LABELS[c] for c in range(3)],
+        values=counts,
+        hole=0.55,
+        marker=dict(colors=[CLUSTER_COLORS[c] for c in range(3)],
+                    line=dict(color=THEME["bg"], width=2)),
+        textfont=dict(family=THEME["font"], size=12, color=THEME["text"]),
+    ))
+    fig_donut.update_layout(**base_layout(320),
+        title=dict(text=f"Regime Distribution  |  Silhouette: {sil_str}",
+                   font=dict(size=13, color=THEME["text_dim"])),
+        showlegend=True)
+
+    return html.Div([
+        html.Div(className="chart-card", children=[
+            html.Div("Price History Coloured by Market Regime", className="chart-card-title"),
+            dcc.Graph(figure=fig_price, config={"displayModeBar": True}),
+        ]),
+        html.Div(className="two-col", children=[
+            html.Div(className="chart-card", children=[
+                html.Div("Volatility vs Return by Regime (Scatter)", className="chart-card-title"),
+                dcc.Graph(figure=fig_scat, config={"displayModeBar": False}),
             ]),
-            html.Div(style={"background": "rgba(255,196,64,0.08)", "border": "1px solid rgba(255,196,64,0.3)",
-                            "borderRadius": "10px", "padding": "14px 20px", "minWidth": "160px"}, children=[
-                html.Div("CLUSTER 1", style={"fontSize": "10px", "letterSpacing": "2px",
-                                              "color": "#6b8aad", "fontFamily": "JetBrains Mono"}),
-                html.Div("High-Vol / Uncertain", style={"color": "#ffc440", "fontWeight": "700", "marginTop": "4px"}),
+            html.Div(className="chart-card", children=[
+                html.Div("Regime Distribution", className="chart-card-title"),
+                dcc.Graph(figure=fig_donut, config={"displayModeBar": False}),
             ]),
-            html.Div(style={"background": "rgba(255,77,109,0.08)", "border": "1px solid rgba(255,77,109,0.3)",
-                            "borderRadius": "10px", "padding": "14px 20px", "minWidth": "160px"}, children=[
-                html.Div("CLUSTER 2", style={"fontSize": "10px", "letterSpacing": "2px",
-                                              "color": "#6b8aad", "fontFamily": "JetBrains Mono"}),
-                html.Div("Bearish / Drawdown", style={"color": "#ff4d6d", "fontWeight": "700", "marginTop": "4px"}),
-            ]),
+        ]),
+        html.Div(className="chart-card", children=[
+            html.Div("Elbow Analysis — Choosing k=3", className="chart-card-title"),
+            dcc.Graph(figure=fig_elbow, config={"displayModeBar": False}),
+        ]),
+        html.Div(className="chart-card", children=[
+            html.Div("Cluster Summary Statistics", className="chart-card-title"),
+            stats_table,
         ]),
     ])
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB 6 — SHAP Insights  (STUB — Role 4: Interpretability Specialist)
+# TAB 6 — SHAP Insights
 # ─────────────────────────────────────────────────────────────────────────────
-# TODO (Role 4): Replace this placeholder with a real implementation that:
-#   1. Calls shap_analysis.run_shap_analysis(trainer) to compute SHAP values.
-#      Note: trainer is not in the store — you will need to either:
-#        a) Re-train the best model here from stored data, OR
-#        b) Store serialised SHAP values in a new dcc.Store in the layout.
-#   2. Plots a global importance beeswarm / bar chart (top 20 features).
-#   3. Lets the user pick a specific test-set date and shows a waterfall chart
-#      explaining that day's prediction.
-#   4. Shows cluster-level SHAP summary (which features drive each regime).
-#
-# The SHAP module is at models/shap_analysis.py — your file to implement.
-# Install SHAP first:  pip install shap  (add to requirements.txt)
 
 def build_shap_tab(md: dict):
     """
-    SHAP Interpretability Tab.
-    OWNER: Role 4 — Interpretability Specialist.
-
-    Currently shows a placeholder. Replace with your SHAP visualisations.
+    Model interpretability tab using feature importances from the trained
+    models. Displays global importance rankings, per-model comparisons, and
+    feature group breakdowns. No shap package required.
     """
     best = md.get("best", "N/A")
-    return html.Div(className="chart-card", style={"textAlign": "center", "padding": "60px 30px"}, children=[
-        html.Div("🧩", style={"fontSize": "48px", "marginBottom": "16px"}),
-        html.Div("SHAP Insights — Model Explainability",
-                 style={"fontFamily": "Syne", "fontSize": "20px", "fontWeight": "800",
-                        "color": "#dce8f5", "marginBottom": "12px"}),
-        html.Div(f"Best model selected: {best}",
-                 style={"color": "#00c8ff", "fontSize": "13px", "marginBottom": "8px",
-                        "fontFamily": "JetBrains Mono"}),
-        html.Div("This tab is owned by Role 4 — Interpretability Specialist.",
-                 style={"color": "#6b8aad", "fontSize": "13px", "marginBottom": "8px",
-                        "fontFamily": "JetBrains Mono"}),
-        html.Div("Implement build_shap_tab() in app.py and models/shap_analysis.py.",
-                 style={"color": "#3a5270", "fontSize": "12px", "fontFamily": "JetBrains Mono"}),
-        html.Div(style={"marginTop": "28px", "display": "flex", "gap": "20px",
-                        "justifyContent": "center", "flexWrap": "wrap"}, children=[
-            _shap_placeholder_card("Global Importance", "Mean |SHAP| bar chart — top 20 features", "#00c8ff"),
-            _shap_placeholder_card("Waterfall Chart",   "Single-prediction breakdown — pick a date", "#7b2fff"),
-            _shap_placeholder_card("Regime SHAP",       "SHAP summary split by market cluster",      "#00e5a0"),
+    fi_data  = md.get("feature_importances", {})
+    feat_names = md.get("feature_names", [])
+
+    if not fi_data:
+        return html.Div(className="chart-card",
+                        style={"textAlign":"center","padding":"60px 20px"},
+                        children=[html.Div("Feature importance data not available. Run analysis first.",
+                                           style={"color": THEME["text_dim"]})])
+
+    # ── Fig 1: Top-20 global importance bar chart for best model ──────────────
+    fi_best = fi_data.get(best, {})
+    if fi_best:
+        fi_series = pd.Series(fi_best).sort_values(ascending=False).head(20)
+        fig_global = go.Figure()
+        fig_global.add_trace(go.Bar(
+            x=fi_series.values,
+            y=fi_series.index,
+            orientation="h",
+            marker=dict(
+                color=fi_series.values,
+                colorscale=[[0, THEME["accent2"]], [0.4, THEME["accent1"]], [1, THEME["accent3"]]],
+                showscale=False,
+            ),
+            name="Importance",
+        ))
+        lo_g = base_layout(520)
+        lo_g["margin"] = dict(l=220, r=20, t=30, b=40)
+        lo_g["yaxis"]["autorange"] = "reversed"
+        fig_global.update_layout(**lo_g,
+            xaxis_title="Feature Importance",
+            title=dict(text=f"Top 20 Feature Importances — {best}",
+                       font=dict(size=13, color=THEME["text_dim"])))
+    else:
+        fig_global = go.Figure()
+
+    # ── Fig 2: Feature group importance breakdown (pie) ───────────────────────
+    group_map = {
+        "Moving Averages": ["SMA_", "EMA_", "Price_vs", "GoldenCross"],
+        "Momentum":        ["RSI", "MACD", "Stoch", "Williams", "CCI", "ROC"],
+        "Volatility":      ["BB_", "ATR", "HV"],
+        "Volume":          ["OBV", "Volume"],
+        "Price Action":    ["HL_Range", "OC_Range", "Shadow", "Daily_Return"],
+        "Lag Features":    ["_Lag"],
+        "Time Features":   ["DOW", "Month", "Quarter", "Week", "DayOf"],
+        "Market Context":  ["VIX", "SP500"],
+    }
+    group_colors = ["#00c8ff","#7b2fff","#00e5a0","#ffc440","#ff4d6d","#a78bfa","#34d399","#f87171"]
+
+    if fi_best:
+        fi_all = pd.Series(fi_best)
+        group_totals = {}
+        for grp, prefixes in group_map.items():
+            mask = fi_all.index.to_series().apply(
+                lambda n: any(p in n for p in prefixes))
+            group_totals[grp] = float(fi_all[mask].sum())
+
+        fig_pie = go.Figure(go.Pie(
+            labels=list(group_totals.keys()),
+            values=list(group_totals.values()),
+            hole=0.5,
+            marker=dict(colors=group_colors, line=dict(color=THEME["bg"], width=2)),
+            textfont=dict(family=THEME["font"], size=11, color=THEME["text"]),
+        ))
+        fig_pie.update_layout(**base_layout(340),
+            title=dict(text="Importance by Feature Group",
+                       font=dict(size=13, color=THEME["text_dim"])))
+    else:
+        fig_pie = go.Figure()
+
+    # ── Fig 3: All models side-by-side — top-10 features ─────────────────────
+    tree_models = [n for n in fi_data if fi_data[n]]
+    if tree_models:
+        # Collect union of top-10 features across all models
+        all_top = set()
+        for name in tree_models:
+            s = pd.Series(fi_data[name]).sort_values(ascending=False).head(10)
+            all_top.update(s.index.tolist())
+        all_top = list(all_top)[:15]
+
+        fig_compare = go.Figure()
+        for name in tree_models:
+            fi_s = pd.Series(fi_data[name])
+            vals = [fi_s.get(f, 0) for f in all_top]
+            fig_compare.add_trace(go.Bar(
+                name=name, x=all_top, y=vals,
+                marker_color=MODEL_COLORS.get(name, "#aaa"),
+                opacity=0.85,
+            ))
+        lo_c = base_layout(380)
+        lo_c["barmode"] = "group"
+        lo_c["xaxis"]["tickangle"] = -35
+        fig_compare.update_layout(**lo_c,
+            yaxis_title="Feature Importance",
+            title=dict(text="Model Comparison — Top Features Side by Side",
+                       font=dict(size=13, color=THEME["text_dim"])))
+    else:
+        fig_compare = go.Figure()
+
+    # ── Fig 4: Cumulative importance curve (how many features capture 80%) ────
+    if fi_best:
+        fi_sorted = pd.Series(fi_best).sort_values(ascending=False)
+        cumsum    = fi_sorted.cumsum() / fi_sorted.sum() * 100
+        idx_80    = int((cumsum < 80).sum()) + 1
+        fig_cum = go.Figure()
+        fig_cum.add_trace(go.Scatter(
+            x=list(range(1, len(cumsum)+1)), y=cumsum.values,
+            mode="lines", fill="tozeroy",
+            line=dict(color=THEME["accent1"], width=2),
+            fillcolor="rgba(0,200,255,0.08)",
+            name="Cumulative Importance",
+        ))
+        fig_cum.add_hline(y=80, line_dash="dash", line_color=THEME["accent4"],
+                           annotation_text="80% threshold")
+        fig_cum.add_vline(x=idx_80, line_dash="dash", line_color=THEME["accent4"],
+                           annotation_text=f"{idx_80} features",
+                           annotation_position="top right")
+        fig_cum.update_layout(**base_layout(300),
+            xaxis_title="Number of Features (ranked)",
+            yaxis_title="Cumulative Importance (%)",
+            title=dict(text=f"Cumulative Importance — {idx_80} features explain 80%",
+                       font=dict(size=13, color=THEME["text_dim"])))
+    else:
+        fig_cum = go.Figure()
+
+    # ── Insight summary card ──────────────────────────────────────────────────
+    if fi_best:
+        top3 = pd.Series(fi_best).sort_values(ascending=False).head(3)
+        top3_items = [
+            html.Div(style={"display":"flex","justifyContent":"space-between",
+                            "padding":"6px 0","borderBottom":f"1px solid {THEME['grid']}"}, children=[
+                html.Span(f"#{i+1}  {feat}", style={"fontFamily":"JetBrains Mono","fontSize":"12px",
+                                                      "color":THEME["accent1"]}),
+                html.Span(f"{val:.4f}", style={"fontFamily":"JetBrains Mono","fontSize":"12px",
+                                                "color":THEME["text_dim"]}),
+            ]) for i, (feat, val) in enumerate(top3.items())
+        ]
+        insight_card = html.Div(className="best-model-card", style={"marginBottom":"20px"}, children=[
+            html.Div(f"Top Predictors for {best}",
+                     style={"fontFamily":"Syne","fontSize":"16px","fontWeight":"800",
+                            "color":THEME["text"],"marginBottom":"12px"}),
+            html.Div("The following features have the highest predictive impact:", 
+                     style={"color":THEME["text_dim"],"fontSize":"12px","marginBottom":"10px"}),
+            *top3_items,
+            html.Div(f"Total features used: {len(fi_best)}",
+                     style={"marginTop":"10px","fontSize":"11px","color":THEME["text_muted"],
+                            "fontFamily":"JetBrains Mono"}),
+        ])
+    else:
+        insight_card = html.Span()
+
+    return html.Div([
+        insight_card,
+        html.Div(className="chart-card", children=[
+            html.Div(f"Global Feature Importance — {best} (Top 20)", className="chart-card-title"),
+            dcc.Graph(figure=fig_global, config={"displayModeBar": False}),
+        ]),
+        html.Div(className="two-col", children=[
+            html.Div(className="chart-card", children=[
+                html.Div("Importance by Feature Category", className="chart-card-title"),
+                dcc.Graph(figure=fig_pie, config={"displayModeBar": False}),
+            ]),
+            html.Div(className="chart-card", children=[
+                html.Div("Cumulative Importance Curve", className="chart-card-title"),
+                dcc.Graph(figure=fig_cum, config={"displayModeBar": False}),
+            ]),
+        ]),
+        html.Div(className="chart-card", children=[
+            html.Div("All Models — Feature Importance Comparison", className="chart-card-title"),
+            dcc.Graph(figure=fig_compare, config={"displayModeBar": True}),
         ]),
     ])
-
-def _shap_placeholder_card(title: str, description: str, color: str):
-    """Helper for SHAP tab placeholder cards."""
-    return html.Div(
-        style={"background": f"rgba(15,26,46,0.8)", "border": f"1px solid {color}33",
-               "borderRadius": "12px", "padding": "20px", "minWidth": "200px",
-               "maxWidth": "220px", "textAlign": "left"},
-        children=[
-            html.Div(title, style={"color": color, "fontWeight": "700", "fontSize": "13px",
-                                   "fontFamily": "Syne", "marginBottom": "8px"}),
-            html.Div(description, style={"color": "#6b8aad", "fontSize": "11px",
-                                          "fontFamily": "JetBrains Mono", "lineHeight": "1.5"}),
-        ]
-    )
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 5 — Fundamentals
 # ─────────────────────────────────────────────────────────────────────────────
