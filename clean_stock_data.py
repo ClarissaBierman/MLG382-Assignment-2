@@ -31,5 +31,16 @@ def clean_stock_data_for_dashboard(ticker, start_date, end_date):
     # Final Clean
     df.ffill(inplace=True)
     df.dropna(inplace=True)
+    
+    # 1. Create the folder if it doesn't exist
+    os.makedirs('data/ml_ready', exist_ok=True) 
+    
+    # 2. Define the filename based on the ticker
+    file_path = f"data/ml_ready/{ticker}_training_data.csv"
+    
+    # 3. Save the dataframe to that path
+    df.to_csv(file_path)
+    
+    print(f"ML-ready file created at: {file_path}")
 
     return df
