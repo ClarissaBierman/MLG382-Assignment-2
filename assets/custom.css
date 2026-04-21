@@ -500,20 +500,6 @@ input[type="text"]:focus, .dash-input:focus {
 ._dash-loading-callback { background: rgba(6,11,20,0.5) !important; }
 ._dash-loading-callback ._dash-loading { border-top-color: var(--accent1) !important; }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   CUSTOM CIRCULAR LOADER
-   ───────────────────────────────────────────────────────────────────────────
-   Structure (Python side):
-     .loader-wrapper
-       div.loader-ring-wrap          ← relative container, 160×160
-         .orbit-loader               ← SPINS: 24 tick marks
-           div × 24                  ← individual ticks
-         .loader-center-text         ← STATIC: sits on top, doesn't spin
-           .loader-progress-num      ← "72"
-           .loader-progress-label    ← "ANALYSING"
-       .loader-subtext               ← bottom status line
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 /* Full-screen overlay */
 .loader-wrapper {
   position: fixed;
@@ -540,7 +526,6 @@ input[type="text"]:focus, .dash-input:focus {
 .orbit-loader {
   position: absolute;
   inset: 0;
-  animation: loader-spin 1.6s linear infinite;
 }
 
 /* Each tick — a small rounded pill */
@@ -555,44 +540,39 @@ input[type="text"]:focus, .dash-input:focus {
   border-radius: 2px;
   transform-origin: 1.5px 80px;  /* rotate around the ring centre         */
   background: var(--accent1);
-  opacity: 0.05;              /* default: nearly invisible                */
+  opacity: 0.05;              /* default: nearly invisible       */
+  animation: glow-fade 2.4s linear infinite;         
 }
 
-/* ── Bright "leading arc" — first 8 ticks glow, rest fade to invisible ──── */
-/* Tick 1 = front of sweep = maximum glow */
-.orbit-loader > div:nth-child(1) {
-  transform: rotate(0deg);
-  opacity: 1;
-  box-shadow: 0 0 12px 4px rgba(0,200,255,0.95),
-              0 0 24px 8px rgba(0,200,255,0.45);
-}
-.orbit-loader > div:nth-child(2)  { transform: rotate(15deg);  opacity: 0.88; box-shadow: 0 0 9px 3px rgba(0,200,255,0.7); }
-.orbit-loader > div:nth-child(3)  { transform: rotate(30deg);  opacity: 0.72; box-shadow: 0 0 7px 2px rgba(0,200,255,0.5); }
-.orbit-loader > div:nth-child(4)  { transform: rotate(45deg);  opacity: 0.55; box-shadow: 0 0 5px 1px rgba(0,200,255,0.35); }
-.orbit-loader > div:nth-child(5)  { transform: rotate(60deg);  opacity: 0.38; }
-.orbit-loader > div:nth-child(6)  { transform: rotate(75deg);  opacity: 0.24; }
-.orbit-loader > div:nth-child(7)  { transform: rotate(90deg);  opacity: 0.14; }
-.orbit-loader > div:nth-child(8)  { transform: rotate(105deg); opacity: 0.09; }
-.orbit-loader > div:nth-child(9)  { transform: rotate(120deg); opacity: 0.06; }
-.orbit-loader > div:nth-child(10) { transform: rotate(135deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(11) { transform: rotate(150deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(12) { transform: rotate(165deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(13) { transform: rotate(180deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(14) { transform: rotate(195deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(15) { transform: rotate(210deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(16) { transform: rotate(225deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(17) { transform: rotate(240deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(18) { transform: rotate(255deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(19) { transform: rotate(270deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(20) { transform: rotate(285deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(21) { transform: rotate(300deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(22) { transform: rotate(315deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(23) { transform: rotate(330deg); opacity: 0.05; }
-.orbit-loader > div:nth-child(24) { transform: rotate(345deg); opacity: 0.05; }
+.orbit-loader > div:nth-child(1)  { transform: rotate(0deg);   animation-delay: 0s;}
+.orbit-loader > div:nth-child(2)  { transform: rotate(15deg);  animation-delay: 0.1s;}
+.orbit-loader > div:nth-child(3)  { transform: rotate(30deg);  animation-delay: 0.2s;}
+.orbit-loader > div:nth-child(4)  { transform: rotate(45deg);  animation-delay: 0.3s;}
+.orbit-loader > div:nth-child(5)  { transform: rotate(60deg);  animation-delay: 0.4s;}
+.orbit-loader > div:nth-child(6)  { transform: rotate(75deg);  animation-delay: 0.5s;}
+.orbit-loader > div:nth-child(7)  { transform: rotate(90deg);  animation-delay: 0.6s;}
+.orbit-loader > div:nth-child(8)  { transform: rotate(105deg); animation-delay: 0.7s;}
+.orbit-loader > div:nth-child(9)  { transform: rotate(120deg); animation-delay: 0.8s;}
+.orbit-loader > div:nth-child(10) { transform: rotate(135deg); animation-delay: 0.9s;}
+.orbit-loader > div:nth-child(11) { transform: rotate(150deg); animation-delay: 1.0s;}
+.orbit-loader > div:nth-child(12) { transform: rotate(165deg); animation-delay: 1.1s;}
+.orbit-loader > div:nth-child(13) { transform: rotate(180deg); animation-delay: 1.2s;}
+.orbit-loader > div:nth-child(14) { transform: rotate(195deg); animation-delay: 1.3s;}
+.orbit-loader > div:nth-child(15) { transform: rotate(210deg); animation-delay: 1.4s;}
+.orbit-loader > div:nth-child(16) { transform: rotate(225deg); animation-delay: 1.5s;}
+.orbit-loader > div:nth-child(17) { transform: rotate(240deg); animation-delay: 1.6s;}
+.orbit-loader > div:nth-child(18) { transform: rotate(255deg); animation-delay: 1.7s;}
+.orbit-loader > div:nth-child(19) { transform: rotate(270deg); animation-delay: 1.8s;}
+.orbit-loader > div:nth-child(20) { transform: rotate(285deg); animation-delay: 1.9s;}
+.orbit-loader > div:nth-child(21) { transform: rotate(300deg); animation-delay: 2.0s;}
+.orbit-loader > div:nth-child(22) { transform: rotate(315deg); animation-delay: 2.1s;}
+.orbit-loader > div:nth-child(23) { transform: rotate(330deg); animation-delay: 2.2s;}
+.orbit-loader > div:nth-child(24) { transform: rotate(345deg); animation-delay: 2.3s;}
 
-@keyframes loader-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+@keyframes glow-fade {
+  0%   { opacity: 0.05; box-shadow: none; }
+  50%  { opacity: 1;   box-shadow: 0 0 12px 4px rgba(0,200,255,0.95); }
+  100% { opacity: 0.05; box-shadow: none; }
 }
 
 /* ── Centre text — static, overlaid on the ring ─────────────────────────── */
