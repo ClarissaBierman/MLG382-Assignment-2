@@ -1,59 +1,55 @@
-"""
-ml_models.py  — CRISP-DM Phase 4 (Modelling) & Phase 5 (Evaluation)
-═════════════════════════════════════════════════════════════════════
-OWNER:  Role 3 — Lead ML Engineer
-STATUS: SKELETON — implement all TODO sections below.
-
-Your responsibilities:
-  1. Define at least 5 regression models in MODEL_REGISTRY.
-  2. Implement StockModelTrainer.train_all() — fit every model, store
-     train/test predictions, compute evaluation metrics.
-  3. Implement walk-forward cross-validation in train_all().
-  4. Implement forecast_future() for iterative n-day forecasting.
-  5. Extract and store feature importances for tree-based models.
-  6. Return a clean metrics DataFrame via get_metrics_df().
-
-The Dash app calls:
-    trainer = StockModelTrainer()
-    trainer.train_all(X, y)
-    # then reads trainer.metrics, trainer.test_predictions, etc.
-So your attribute names must match exactly.
-"""
-
 import numpy as np
 import pandas as pd
+import copy
+
 from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import TimeSeriesSplit
+
 import warnings
 warnings.filterwarnings("ignore")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TODO (ML Engineer): Populate MODEL_REGISTRY with at least 5 models.
-# Keys   = model name (str) — must be unique, used throughout the dashboard.
-# Values = unfitted estimator or sklearn Pipeline.
-#
-# Required models (minimum):
-#   "Linear Regression"  — baseline, wrap in Pipeline with StandardScaler
-#   "Ridge Regression"   — regularised linear, wrap in Pipeline
-#   "Random Forest"      — RandomForestRegressor
-#   "XGBoost"            — XGBRegressor
-#   "Gradient Boosting"  — GradientBoostingRegressor
-#
-# Tune hyperparameters as you see fit.  Document your choices in the report.
-# ─────────────────────────────────────────────────────────────────────────────
+#Registry for each model
 
 MODEL_REGISTRY: dict = {
-    # TODO: add your models here
-    # Example:
-    # "Linear Regression": Pipeline([("scaler", StandardScaler()), ("model", LinearRegression())]),
+    "Linear Regression": Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", LinearRegression())
+    ]),
+
+    "Ridge Regression": Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", Ridge(alpha=1.0))
+    ]),
+
+    "Random Forest": RandomForestRegressor(
+        n_estimators=200,
+        max_depth=10,
+        random_state=42
+    ),
+
+    "XGBoost": XGBRegressor(
+        n_estimators=300,
+        max_depth=5,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42
+    ),
+
+    "Gradient Boosting": GradientBoostingRegressor(
+        n_estimators=200,
+        learning_rate=0.05,
+        max_depth=3
+    ),
 }
 
-# Colour map used by the Dash charts — one hex colour per model name.
-# Keep keys in sync with MODEL_REGISTRY.
+
 MODEL_COLORS: dict = {
     "Linear Regression":  "#60a5fa",
     "Ridge Regression":   "#a78bfa",
@@ -63,172 +59,214 @@ MODEL_COLORS: dict = {
 }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper: compute evaluation metrics for one model
-# TODO (ML Engineer): implement this function.
-# Required keys in returned dict:
-#   "RMSE", "MAE", "R²", "MAPE (%)", "Direction Acc (%)"
-# ─────────────────────────────────────────────────────────────────────────────
+#Definition for computing metrics regarding each model
 
 def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
-    """
-    Compute regression evaluation metrics.
+    rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
+    mae = float(mean_absolute_error(y_true, y_pred))
+    r2 = float(r2_score(y_true, y_pred))
 
-    Metrics to include:
-      RMSE             — root mean squared error
-      MAE              — mean absolute error
-      R²               — coefficient of determination
-      MAPE (%)         — mean absolute percentage error × 100
-      Direction Acc (%)— % of days where sign(Δpred) == sign(Δactual)
-                         i.e. did the model predict the direction correctly?
-                         Use np.diff on both arrays.
+    mape = float(np.mean(np.abs((y_true - y_pred) / (y_true + 1e-8))) * 100)
 
-    Returns a dict with exactly those 5 keys.
-    """
-    # TODO: implement using sklearn.metrics or manual numpy calculations
-    raise NotImplementedError("_compute_metrics not implemented — ML Engineer task")
+    actual_diff = np.diff(y_true)
+    pred_diff = np.diff(y_pred)
+
+    direction_acc = float(
+        np.mean(np.sign(actual_diff) == np.sign(pred_diff)) * 100
+    )
+
+    return {
+        "RMSE": rmse,
+        "MAE": mae,
+        "R²": r2,
+        "MAPE (%)": mape,
+        "Direction Acc (%)": direction_acc
+    }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main trainer class
-# ─────────────────────────────────────────────────────────────────────────────
+#Training each model according to structure
 
 class StockModelTrainer:
-    """
-    Train, evaluate and expose predictions for all models in MODEL_REGISTRY.
-
-    Attributes populated by train_all() — the Dash app reads these directly:
-      trained_models    : dict[str, fitted_estimator]
-      metrics           : dict[str, dict]  — test-set metrics per model
-      cv_scores         : dict[str, np.ndarray]  — R² per CV fold
-      feature_importances: dict[str, pd.Series]  — sorted, top features
-      train_predictions : dict[str, np.ndarray]
-      test_predictions  : dict[str, np.ndarray]
-      y_train, y_test   : pd.Series
-      feature_names     : list[str]
-      best_model_name   : str  — model with lowest test RMSE
-    """
 
     def __init__(self, test_size: float = 0.2, n_cv_splits: int = 5):
         self.test_size   = test_size
         self.n_cv_splits = n_cv_splits
 
-        # ── Attributes populated by train_all ────────────────────────────────
-        self.trained_models:      dict = {}
-        self.metrics:             dict = {}
-        self.cv_scores:           dict = {}
-        self.feature_importances: dict = {}
-        self.train_predictions:   dict = {}
-        self.test_predictions:    dict = {}
+        self.trained_models      = {}
+        self.metrics             = {}
+        self.cv_scores           = {}
+        self.feature_importances = {}
+        self.train_predictions   = {}
+        self.test_predictions    = {}
         self.X_train = self.X_test = None
         self.y_train = self.y_test = None
-        self.feature_names:  list = []
-        self.best_model_name: str = ""
+        self.feature_names = []
+        self.best_model_name = ""  
 
-    # ── Private: chronological 80/20 split ───────────────────────────────────
-
-    def _time_split(self, X: pd.DataFrame, y: pd.Series) -> None:
-        """Split X, y chronologically. Do NOT shuffle."""
+    def _time_split(self, X: pd.DataFrame, y: pd.Series):
         split = int(len(X) * (1 - self.test_size))
-        self.X_train = X.iloc[:split]
-        self.X_test  = X.iloc[split:]
-        self.y_train = y.iloc[:split]
-        self.y_test  = y.iloc[split:]
+
+        self.X_train = X.iloc[:split].copy()
+        self.X_test  = X.iloc[split:].copy()
+
+        self.y_train = y.iloc[:split].copy()
+        self.y_test  = y.iloc[split:].copy()
+
         self.feature_names = list(X.columns)
 
-    # ── TODO (ML Engineer): implement train_all ───────────────────────────────
+    def train_all(self, X: pd.DataFrame, y: pd.Series):
 
-    def train_all(self, X: pd.DataFrame, y: pd.Series) -> None:
-        """
-        Train every model in MODEL_REGISTRY and populate all attributes.
+        self._time_split(X, y)
+        tscv = TimeSeriesSplit(n_splits=self.n_cv_splits)
 
-        Steps:
-          1. Call self._time_split(X, y).
-          2. For each model name + prototype in MODEL_REGISTRY:
-               a. Deep-copy the prototype (use copy.deepcopy).
-               b. Fit on X_train / y_train.
-               c. Predict on X_train → store in self.train_predictions[name].
-               d. Predict on X_test  → store in self.test_predictions[name].
-               e. Compute metrics via _compute_metrics → self.metrics[name].
-               f. Store the fitted model in self.trained_models[name].
-          3. Walk-forward cross-validation (sklearn.model_selection.TimeSeriesSplit)
-               — n_splits = self.n_cv_splits
-               — Metric: R² on each validation fold
-               — Store array of fold scores in self.cv_scores[name].
-          4. Extract feature importances via self._extract_feature_importances().
-          5. Set self.best_model_name = model with lowest RMSE on the test set.
-        """
-        # TODO: implement
-        raise NotImplementedError("train_all not implemented — ML Engineer task")
+        for name, prototype in MODEL_REGISTRY.items():
 
-    # ── TODO (ML Engineer): implement feature importance extraction ───────────
+            model = copy.deepcopy(prototype)
 
-    def _extract_feature_importances(self) -> None:
-        """
-        For each fitted model in self.trained_models:
-          - If it has .feature_importances_ → use directly.
-          - If it has .coef_ (linear models via Pipeline) → use |coef_|.
-          - Store as a pd.Series sorted descending in self.feature_importances[name].
+            # Training each model
+            model.fit(self.X_train, self.y_train)
 
-        For Pipeline objects, access the inner estimator via
-        model.named_steps["model"].
-        """
-        # TODO: implement
-        pass
+            # Making predictions for each model
+            train_pred = model.predict(self.X_train)
+            test_pred  = model.predict(self.X_test)
 
-    # ── TODO (ML Engineer): implement future forecast ─────────────────────────
+            # Storing predictions ensuring they are json safe
+            self.train_predictions[name] = np.array(train_pred, dtype=float)
+            self.test_predictions[name]  = np.array(test_pred, dtype=float)
+
+            # Metrics
+            self.metrics[name] = _compute_metrics(
+                self.y_test.to_numpy(),
+                test_pred
+            )
+
+            # Store model
+            self.trained_models[name] = model
+          
+            scores = []
+
+            for train_idx, val_idx in tscv.split(self.X_train):
+
+                X_tr = self.X_train.iloc[train_idx]
+                X_val = self.X_train.iloc[val_idx]
+
+                y_tr = self.y_train.iloc[train_idx]
+                y_val = self.y_train.iloc[val_idx]
+
+                cv_model = copy.deepcopy(prototype)
+                cv_model.fit(X_tr, y_tr)
+
+                preds = cv_model.predict(X_val)
+                scores.append(r2_score(y_val, preds))
+
+            self.cv_scores[name] = np.array(scores, dtype=float)
+
+        self._extract_feature_importances()
+
+        #Choosing best model for predictions
+        self.best_model_name = min(
+            self.metrics,
+            key=lambda m: self.metrics[m]["RMSE"]
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _extract_feature_importances(self):
+
+        for name, model in self.trained_models.items():
+            
+            if isinstance(model, Pipeline):
+                estimator = model.named_steps["model"]
+            else:
+                estimator = model
+
+            if hasattr(estimator, "feature_importances_"):
+                values = estimator.feature_importances_
+
+            elif hasattr(estimator, "coef_"):
+                values = np.abs(estimator.coef_)
+
+            else:
+                continue
+
+            fi = pd.Series(values, index=self.feature_names)
+            fi = fi.sort_values(ascending=False)
+
+            # Ensure JSON-safe
+            self.feature_importances[name] = fi.astype(float)
+
+#Using models in order to make robust predictions
 
     def forecast_future(self, X_last_row: np.ndarray,
                         n_days: int = 30,
                         model_name: str = None) -> np.ndarray:
-        """
-        Iterative n-day forecast using the best (or specified) model.
 
-        Algorithm:
-          1. Start with X_last_row (the most recent feature vector).
-          2. Predict one step → append to results.
-          3. Shift the Close lag features forward by one position
-             (Lag1 ← prediction, Lag2 ← old Lag1, etc.).
-          4. Repeat n_days times.
-          5. Return np.ndarray of predicted prices.
+        if model_name is None:
+            model_name = self.best_model_name
 
-        Hint: self.feature_names contains the ordered feature name list.
-              Look for "Close_Lag" in the names to find the lag columns.
-        """
-        # TODO: implement
-        raise NotImplementedError("forecast_future not implemented — ML Engineer task")
+        model = self.trained_models[model_name]
 
-    # ── Accessor: metrics DataFrame ───────────────────────────────────────────
+        current = np.array(X_last_row, dtype=float).copy()
+        preds = []
+
+        # Detect lag features robustly
+        lag_indices = [
+            i for i, col in enumerate(self.feature_names)
+            if "lag" in col.lower()
+        ]
+
+        # Sort by lag number if present
+        lag_indices = sorted(lag_indices)
+
+        for _ in range(n_days):
+
+            pred = float(model.predict(current.reshape(1, -1))[0])
+            preds.append(pred)
+
+            # Shift lag values
+            if lag_indices:
+                for i in range(len(lag_indices)-1, 0, -1):
+                    current[lag_indices[i]] = current[lag_indices[i-1]]
+
+                # Insert new prediction at Lag1
+                current[lag_indices[0]] = pred
+
+        return np.array(preds, dtype=float)
+
+    # ─────────────────────────────────────────────────────────────────────────
 
     def get_metrics_df(self) -> pd.DataFrame:
-        """
-        Returns a DataFrame with one row per model containing all metrics
-        plus CV R² mean and std.  Called by the Dash dashboard.
-        Do not modify the column names — the app reads them directly.
-        """
+
         rows = []
         for name, m in self.metrics.items():
             row = {
-                "Model":      name,
+                "Model": name,
                 **m,
                 "CV R² Mean": float(np.mean(self.cv_scores.get(name, [np.nan]))),
-                "CV R² Std":  float(np.std(self.cv_scores.get(name, [np.nan]))),
+                "CV R² Std":  float(np.std(self.cv_scores.get(name, [np.nan])))
             }
             rows.append(row)
+
         df = pd.DataFrame(rows).set_index("Model")
+
         num_cols = df.select_dtypes("number").columns
         df[num_cols] = df[num_cols].round(4)
+
         return df
 
+    # ─────────────────────────────────────────────────────────────────────────
+
     def get_best_predictions(self):
-        """Return (predictions, y_test) for the best model."""
         return self.test_predictions[self.best_model_name], self.y_test
 
-    def get_top_features(self, model_name: str = None, top_n: int = 20) -> pd.Series:
-        """Return top_n features by importance for a given model."""
+    def get_top_features(self, model_name: str = None, top_n: int = 20):
+
         if model_name is None:
             model_name = self.best_model_name
+
         fi = self.feature_importances.get(model_name)
+
         if fi is None:
             return pd.Series(dtype=float)
+
         return fi.head(top_n)
