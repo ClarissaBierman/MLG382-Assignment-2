@@ -1,42 +1,25 @@
 """
 feature_engineering.py  — CRISP-DM Phase 3: Data Preparation
 ══════════════════════════════════════════════════════════════
-OWNER:  Role 2 — Data Engineer & Preprocessing Specialist
-STATUS: SKELETON — implement all TODO sections below.
-
-Your job is to implement each technical indicator from scratch using
-pandas / numpy only (no ta-lib dependency). Each function already has
-its signature, docstring, and return type defined. Fill in the bodies.
-
-When done, your functions will be called automatically by the Dash app
-(via prepare_features) to build the feature matrix for the ML models.
 """
 
 import numpy as np
 import pandas as pd
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 1 — Moving Averages
-# TODO (Data Engineer): implement _sma and _ema.
-# Hint: pd.Series.rolling().mean() and pd.Series.ewm().mean()
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _sma(series: pd.Series, window: int) -> pd.Series:
     """Simple Moving Average over `window` periods."""
-    # TODO: implement
-    raise NotImplementedError("_sma not implemented — Data Engineer task")
-
+    return series.rolling(window=window, min_periods=1).mean()
 
 def _ema(series: pd.Series, span: int) -> pd.Series:
     """Exponential Moving Average with given span (adjust=False)."""
-    # TODO: implement
-    raise NotImplementedError("_ema not implemented — Data Engineer task")
-
+    return series.ewm(span=span, adjust=False, min_periods=1).mean()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 2 — Momentum Indicators
-# TODO (Data Engineer): implement each indicator below.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _rsi(series: pd.Series, window: int = 14) -> pd.Series:
@@ -45,9 +28,16 @@ def _rsi(series: pd.Series, window: int = 14) -> pd.Series:
     RSI = 100 - (100 / (1 + RS))  where RS = avg_gain / avg_loss.
     Values > 70 = overbought, < 30 = oversold.
     """
-    # TODO: implement using price diff, clip gains/losses, rolling mean
-    raise NotImplementedError("_rsi not implemented — Data Engineer task")
-
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    
+    avg_gain = gain.rolling(window=window, min_periods=1).mean()
+    avg_loss = loss.rolling(window=window, min_periods=1).mean()
+    
+    rs = avg_gain / (avg_loss + 1e-9)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 def _macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
     """
@@ -57,9 +47,12 @@ def _macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
       signal_line = EMA(macd_line, span=signal)
       histogram   = macd_line - signal_line
     """
-    # TODO: implement using _ema
-    raise NotImplementedError("_macd not implemented — Data Engineer task")
-
+    ema_fast = _ema(series, fast)
+    ema_slow = _ema(series, slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = _ema(macd_line, signal)
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
 
 def _bollinger_bands(series: pd.Series, window: int = 20, num_std: float = 2.0):
     """
@@ -69,8 +62,11 @@ def _bollinger_bands(series: pd.Series, window: int = 20, num_std: float = 2.0):
       upper = mid + num_std * rolling_std(window)
       lower = mid - num_std * rolling_std(window)
     """
-    # TODO: implement
-    raise NotImplementedError("_bollinger_bands not implemented — Data Engineer task")
+    mid = _sma(series, window)
+    std = series.rolling(window=window, min_periods=1).std()
+    upper = mid + (num_std * std)
+    lower = mid - (num_std * std)
+    return upper, mid, lower
 
 
 def _atr(high: pd.Series, low: pd.Series, close: pd.Series,
@@ -80,8 +76,14 @@ def _atr(high: pd.Series, low: pd.Series, close: pd.Series,
     True Range = max(H-L, |H-C_prev|, |L-C_prev|)
     ATR = rolling mean of TR over `window`.
     """
-    # TODO: implement — shift close by 1 for previous close
-    raise NotImplementedError("_atr not implemented — Data Engineer task")
+    prev_close = close.shift(1)
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.rolling(window=window, min_periods=1).mean()
+    return atr
 
 
 def _obv(close: pd.Series, volume: pd.Series) -> pd.Series:
@@ -89,8 +91,9 @@ def _obv(close: pd.Series, volume: pd.Series) -> pd.Series:
     On-Balance Volume.
     Add volume when price closes up, subtract when closes down. Cumsum.
     """
-    # TODO: implement using np.sign(close.diff()) * volume
-    raise NotImplementedError("_obv not implemented — Data Engineer task")
+    direction = np.sign(close.diff())
+    obv = (direction * volume).fillna(0).cumsum()
+    return obv
 
 
 def _stochastic(high: pd.Series, low: pd.Series, close: pd.Series,
@@ -101,9 +104,12 @@ def _stochastic(high: pd.Series, low: pd.Series, close: pd.Series,
     %D = SMA(%K, d_window)
     Returns: (%K, %D)
     """
-    # TODO: implement
-    raise NotImplementedError("_stochastic not implemented — Data Engineer task")
-
+    lowest_low = low.rolling(window=k_window, min_periods=1).min()
+    highest_high = high.rolling(window=k_window, min_periods=1).max()
+    
+    k = 100 * (close - lowest_low) / (highest_high - lowest_low + 1e-9)
+    d = _sma(k, d_window)
+    return k, d
 
 def _williams_r(high: pd.Series, low: pd.Series, close: pd.Series,
                 window: int = 14) -> pd.Series:
@@ -112,8 +118,12 @@ def _williams_r(high: pd.Series, low: pd.Series, close: pd.Series,
     = -100 * (highest_high - close) / (highest_high - lowest_low)
     Range: -100 (oversold) to 0 (overbought).
     """
-    # TODO: implement
-    raise NotImplementedError("_williams_r not implemented — Data Engineer task")
+    highest_high = high.rolling(window=window, min_periods=1).max()
+    lowest_low = low.rolling(window=window, min_periods=1).min()
+    
+    williams = -100 * (highest_high - close) / (highest_high - lowest_low + 1e-9)
+    return williams
+
 
 
 def _cci(high: pd.Series, low: pd.Series, close: pd.Series,
@@ -123,15 +133,15 @@ def _cci(high: pd.Series, low: pd.Series, close: pd.Series,
     Typical Price = (H + L + C) / 3
     CCI = (TP - SMA(TP, window)) / (0.015 * mean_abs_deviation)
     """
-    # TODO: implement
-    raise NotImplementedError("_cci not implemented — Data Engineer task")
-
+    typical_price = (high + low + close) / 3
+    sma_tp = _sma(typical_price, window)
+    mean_dev = (typical_price - sma_tp).abs().rolling(window=window, min_periods=1).mean()
+    
+    cci = (typical_price - sma_tp) / (0.015 * mean_dev + 1e-9)
+    return cci
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 3 — Full feature builder
-# TODO (Data Engineer): call all the indicator functions above and assign
-# the results as new columns on the DataFrame copy.
-# Use the exact column naming convention shown in the docstring.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -171,21 +181,95 @@ def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     c, h, l, o, v = df["Close"], df["High"], df["Low"], df["Open"], df["Volume"]
 
-    # TODO: implement all columns listed above
-    # Example of first few to get you started:
-    # df["SMA_5"]  = _sma(c, 5)
-    # df["SMA_20"] = _sma(c, 20)
-    # ...
-
-    raise NotImplementedError(
-        "add_technical_indicators not implemented — Data Engineer task.\n"
-        "Implement all indicator helper functions in SECTION 2 first, "
-        "then fill in this function to build the full feature set."
-    )
-
+    # Moving Averages
+    df["SMA_5"] = _sma(c, 5)
+    df["SMA_10"] = _sma(c, 10)
+    df["SMA_20"] = _sma(c, 20)
+    df["SMA_50"] = _sma(c, 50)
+    df["SMA_100"] = _sma(c, 100)
+    df["SMA_200"] = _sma(c, 200)
+    
+    df["EMA_5"] = _ema(c, 5)
+    df["EMA_10"] = _ema(c, 10)
+    df["EMA_20"] = _ema(c, 20)
+    df["EMA_50"] = _ema(c, 50)
+    df["EMA_100"] = _ema(c, 100)
+    df["EMA_200"] = _ema(c, 200)
+    
+    # Price vs Moving Averages
+    df["Price_vs_SMA5"] = (c / df["SMA_5"]) - 1
+    df["Price_vs_SMA20"] = (c / df["SMA_20"]) - 1
+    df["Price_vs_SMA50"] = (c / df["SMA_50"]) - 1
+    df["Price_vs_SMA200"] = (c / df["SMA_200"]) - 1
+    
+    # Golden Cross indicator
+    df["GoldenCross"] = (df["SMA_50"] > df["SMA_200"]).astype(int)
+    
+    # RSI
+    df["RSI_14"] = _rsi(c, 14)
+    df["RSI_7"] = _rsi(c, 7)
+    
+    # MACD
+    macd, signal, hist = _macd(c)
+    df["MACD"] = macd
+    df["MACD_Signal"] = signal
+    df["MACD_Hist"] = hist
+    
+    # Stochastic
+    stoch_k, stoch_d = _stochastic(h, l, c)
+    df["Stoch_K"] = stoch_k
+    df["Stoch_D"] = stoch_d
+    
+    # Williams %R
+    df["Williams_R"] = _williams_r(h, l, c)
+    
+    # CCI
+    df["CCI"] = _cci(h, l, c)
+    
+    # Rate of Change
+    df["ROC_1"] = c.pct_change(1) * 100
+    df["ROC_5"] = c.pct_change(5) * 100
+    df["ROC_10"] = c.pct_change(10) * 100
+    df["ROC_20"] = c.pct_change(20) * 100
+    
+    # Bollinger Bands
+    bb_upper, bb_mid, bb_lower = _bollinger_bands(c)
+    df["BB_Upper"] = bb_upper
+    df["BB_Mid"] = bb_mid
+    df["BB_Lower"] = bb_lower
+    df["BB_Width"] = (bb_upper - bb_lower) / (bb_mid + 1e-9)
+    df["BB_Pct"] = (c - bb_lower) / (bb_upper - bb_lower + 1e-9)
+    
+    # ATR
+    df["ATR_14"] = _atr(h, l, c, 14)
+    df["ATR_Norm"] = df["ATR_14"] / (c + 1e-9)
+    
+    # Historical Volatility
+    log_returns = np.log(c / c.shift(1))
+    df["HV_21"] = log_returns.rolling(window=21, min_periods=1).std() * np.sqrt(252) * 100
+    
+    # On-Balance Volume
+    df["OBV"] = _obv(c, v)
+    
+    # Volume indicators
+    df["Volume_SMA20"] = _sma(v, 20)
+    df["Volume_Ratio"] = v / (df["Volume_SMA20"] + 1e-9)
+    
+    # Price Action indicators
+    df["HL_Range"] = (h - l) / (c + 1e-9)
+    df["OC_Range"] = (c - o) / (o + 1e-9)
+    
+    # Candlestick shadows
+    df["Upper_Shadow"] = (h - pd.concat([c, o], axis=1).max(axis=1)) / (c + 1e-9)
+    df["Lower_Shadow"] = (pd.concat([c, o], axis=1).min(axis=1) - l) / (c + 1e-9)
+    
+    # Daily return
+    df["Daily_Return"] = c.pct_change()
+    
+    return df
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 4 — Lag & time features  (already implemented — do not modify)
+# SECTION 4 — Lag & time features
 # ─────────────────────────────────────────────────────────────────────────────
 
 def add_lag_features(df: pd.DataFrame,
@@ -215,9 +299,8 @@ def add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     df["WeekOfYear"] = idx.isocalendar().week.values.astype(int)
     return df
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 5 — Master pipeline  (do not modify — called by app.py and EDA)
+# SECTION 5 — Master pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
 def prepare_features(df: pd.DataFrame,
@@ -237,7 +320,6 @@ def prepare_features(df: pd.DataFrame,
                "Adj Close", "Dividends", "Stock Splits"}
     feature_cols = [c for c in df.columns if c not in exclude]
     return df[feature_cols], df["Target"], feature_cols
-
 
 def get_feature_groups() -> dict:
     return {

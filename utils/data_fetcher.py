@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings("ignore")
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Core data fetchers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -72,7 +71,6 @@ def fetch_sp500_data(start_date: str, end_date: str) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Company fundamentals
 # ─────────────────────────────────────────────────────────────────────────────
@@ -109,7 +107,6 @@ def get_company_info(ticker: str) -> dict:
     except Exception:
         return defaults
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Composite loader used by the Dash app
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,12 +141,16 @@ def load_full_dataset(ticker: str, start_date: str, end_date: str) -> pd.DataFra
 
 def load_static_dataset() -> pd.DataFrame:
     """
-    Load a static CSV snapshot of stock data for reproducibility.
-    Adjust the filename if you want a different ticker or dataset.
+    Load the static CSV snapshot from the ml_ready directory.
+    This is the pre-processed dataset created by clean_stock_data.py.
     """
-    path = "data/AAPL_2018_2023.csv"
+    path = "data/ml_ready/AAPL_training_data.csv"
     df = pd.read_csv(path, parse_dates=["Date"])
     df.set_index("Date", inplace=True)
+    # Only keep the OHLCV columns (remove MA5, MA20, Target as they'll be regenerated)
+    core_cols = ["Open", "High", "Low", "Close", "Volume"]
+    if all(col in df.columns for col in core_cols):
+        df = df[core_cols]
     return df
 
 # ─────────────────────────────────────────────────────────────────────────────

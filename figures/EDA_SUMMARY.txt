@@ -1,0 +1,56 @@
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXPLORATORY DATA ANALYSIS SUMMARY — AAPL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. DATASET OVERVIEW
+   • Ticker: AAPL — Apple Inc.
+   • Date Range: 2021-04-22 to 2026-04-20
+   • Trading Days: 1,254
+   • Original Columns: 7
+   • Engineered Features: 63
+
+2. DATA QUALITY
+   • Missing Values: None detected 
+   • Data Completeness: 100.00%
+
+3. RETURN DISTRIBUTION
+   • Mean Daily Return: 0.0751%
+   • Volatility (Std Dev): 1.7303%
+   • Skewness: 0.4610 (Right-skewed)
+   • Kurtosis: 6.9940 (Fat tails)
+   • Distribution: Approximately normal
+
+4. TOP PREDICTIVE FEATURES (by correlation with target)
+   1. EMA_5                          → 0.9945
+   2. Close_Lag1                     → 0.9938
+   3. SMA_5                          → 0.9931
+   4. EMA_10                         → 0.9914
+   5. Close_Lag2                     → 0.9905
+
+5. MODEL PERFORMANCE
+   • Best Model: Linear Regression
+   • Test RMSE: $3.5809
+   • Test R²: 0.9827
+   • MAPE: 1.08%
+   • Direction Accuracy: 52.85%
+
+6. SEASONALITY PATTERNS
+   • Day-of-Week Effect: Detected
+   • Best Day: Mon (0.146%)
+   • Worst Day: Thu (-0.091%)
+
+7. RECOMMENDED FEATURE SET
+   • Lag Features: High importance (Close_Lag1, Close_Lag2)
+   • Technical Indicators: Moving averages, RSI, MACD show strong correlation
+   • Volatility Measures: ATR and Bollinger Bands contribute to predictions
+   • Volume Indicators: Volume ratios help identify regime changes
+
+8. KEY INSIGHTS FOR MODELING
+   • The target variable (next-day close) is highly correlated with recent lags
+   • Technical momentum indicators (RSI, MACD) provide valuable signals
+   • Volatility clustering is present — consider GARCH models for future work
+   • No strong monthly seasonality detected ("January effect" not observed)
+   • Tree-based models (XGBoost, Random Forest) outperform linear models
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
