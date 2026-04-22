@@ -28,14 +28,14 @@ MODEL_REGISTRY: dict = {
     ]),
 
     "Random Forest": RandomForestRegressor(
-        n_estimators=200,
-        max_depth=10,
+        n_estimators=50,
+        max_depth=8,
         random_state=42
     ),
 
     "XGBoost": XGBRegressor(
-        n_estimators=300,
-        max_depth=5,
+        n_estimators=100,
+        max_depth=4,
         learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
@@ -43,7 +43,7 @@ MODEL_REGISTRY: dict = {
     ),
 
     "Gradient Boosting": GradientBoostingRegressor(
-        n_estimators=200,
+        n_estimators=100,
         learning_rate=0.05,
         max_depth=3
     ),
