@@ -43,7 +43,11 @@ body, html {
   min-height: 100vh;
 }
 
-/* ── Stock Market Background ──────────────────────────────────────────────── */
+/* ── Stock Market Background ──────────────────────────────────────────────── *
+ * Layer 1 (::before) — the actual stock chart photo, very darkened & blurred  *
+ * Layer 2 (::after)  — the cyan grid lines on top                             *
+ * Both are fixed so they don't scroll with content.                            *
+ * ─────────────────────────────────────────────────────────────────────────── */
 
 body::before {
   content: '';
@@ -67,6 +71,7 @@ body::after {
   position: fixed;
   inset: 0;
   background:
+    /* Strong dark vignette at top so header stays clean */
     linear-gradient(180deg,
       rgba(6,11,20,0.92) 0%,
       rgba(6,11,20,0.75) 25%,
@@ -167,7 +172,7 @@ body::after {
   border-radius: 14px;
   margin-bottom: 24px;
   position: relative;
-  overflow: visible;
+  overflow: visible;     /* was hidden — was clipping dropdown menus */
   z-index: 100;
 }
 
@@ -195,6 +200,10 @@ body::after {
 }
 
 /* ── Dash Input Overrides ─────────────────────────────────────────────────── */
+/* ── Dropdown — z-index stack fix ──────────────────────────────────────── */
+/* .control-bar now has overflow:visible so menus are no longer clipped.    */
+/* The menu-outer is raised to z-index 9999 so it floats above all cards.   */
+
 .dash-dropdown {
   position: relative;
   z-index: 200;
@@ -383,30 +392,6 @@ input[type="text"]:focus, .dash-input:focus {
 .kpi-change.negative { color: var(--negative); }
 
 /* ── Tabs ────────────────────────────────────────────────────────────────── */
-.custom-tabs {
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-.custom-tabs .tab-container {
-  order: -1 !important;               /* pin nav bar to top of flex stack    */
-  border-bottom: 1px solid var(--border) !important;
-  margin-bottom: 24px !important;
-  background: transparent !important;
-}
-
-/* Collapse the empty built-in Dash content panel — actual tab content
-   is rendered via callback into html.Div(id="tab-content") instead.   */
-.custom-tabs .content--selected {
-  display: none !important;
-  height: 0 !important;
-  min-height: 0 !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border: none !important;
-  background: transparent !important;
-}
-
 .custom-tabs .tab {
   background: transparent !important;
   border: none !important;
@@ -428,6 +413,17 @@ input[type="text"]:focus, .dash-input:focus {
   background: transparent !important;
   color: var(--accent1) !important;
   border-bottom: 2px solid var(--accent1) !important;
+}
+
+.custom-tabs .tab-container {
+  border-bottom: 1px solid var(--border) !important;
+  margin-bottom: 24px !important;
+  background: transparent !important;
+}
+
+.custom-tabs .content--selected {
+  background: transparent !important;
+  border: none !important;
 }
 
 /* ── Chart Cards ─────────────────────────────────────────────────────────── */
@@ -540,11 +536,11 @@ input[type="text"]:focus, .dash-input:focus {
   width: 3px;
   height: 13px;
   margin-left: -1.5px;
-  margin-top: -80px;
+  margin-top: -80px;          /* radius = 80px, so tip starts at center  */
   border-radius: 2px;
-  transform-origin: 1.5px 80px;
+  transform-origin: 1.5px 80px;  /* rotate around the ring centre         */
   background: var(--accent1);
-  opacity: 0.05;
+  opacity: 0.05;              /* default: nearly invisible       */
   animation: glow-fade 2.4s linear infinite;         
 }
 
@@ -785,4 +781,3 @@ input[type="text"]:focus, .dash-input:focus {
   .kpi-row      { grid-template-columns: repeat(2, 1fr); }
   .page-wrapper { padding: 0 12px 20px; }
 }
- 
