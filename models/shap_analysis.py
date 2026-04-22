@@ -30,6 +30,7 @@ except ImportError:
 def compute_shap_values(model, X_train: pd.DataFrame,
                         X_test: pd.DataFrame,
                         model_name: str = "") -> dict:
+    X_test = X_test.iloc[:100]
     """
     Compute SHAP values for a fitted model on the test set.
 
