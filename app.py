@@ -23,6 +23,8 @@ import dash
 from dash import dcc, html, Input, Output, State, dash_table, callback_context
 import dash_bootstrap_components as dbc
 
+import gc
+
 # Local modules
 from utils.data_fetcher import (
     load_full_dataset, get_company_info,
@@ -319,6 +321,10 @@ def run_analysis(n_clicks, ticker, start_date, end_date, horizon, future_days, d
         # 4. Build forecast
         last_features = X.iloc[-1].values
         forecast = trainer.forecast_future(last_features, n_days=int(future_days))
+
+        #Free memory after heavy steps - so it runs on Render
+        del X, y
+        gc.collect()
 
         # 5. Serialise everything for dcc.Store
         df_ind = add_technical_indicators(df.copy())
