@@ -2,7 +2,7 @@
 app.py  ─  StockOracle: AI-Powered Stock Price Prediction Dashboard
 ─────────────────────────────────────────────────────────────────────
 Run:  python app.py
-Then open:  http://numbers
+Then open:  http://127.0.0.1:8050
 """
 
 import warnings
@@ -126,6 +126,7 @@ app.layout = html.Div([
     dcc.Store(id="store-features", storage_type="memory"),
     dcc.Store(id="store-models",   storage_type="memory"),
     dcc.Store(id="store-company",  storage_type="memory"),
+    dcc.Store(id="analysis-done", storage_type="memory"),
 
     html.Div(className="page-wrapper", children=[
 
@@ -233,19 +234,9 @@ app.layout = html.Div([
             ]),
         ]),
 
-        dcc.Loading(
-            id="kpi-loading",
-            type="circle",
-            color="#00c8ff",
-            children=html.Div(id="kpi-row", className="kpi-row"),
-        ),
+        html.Div(id="custom-loader", className="custom-loader"),
+        html.Div(id="kpi-row", className="kpi-row"),
         html.Div(id="error-alert"),
-        dcc.Loading(
-            id="tab-loading",
-            type="circle",
-            color="#00c8ff",
-            children=html.Div(id="tab-content"),
-        ),
 
         # ── Tabs ───────────────────────────────────────────────────────────────
         dcc.Tabs(
@@ -261,11 +252,16 @@ app.layout = html.Div([
             ],
         ),
 
+        # Tab content area
+        html.Div(id="tab-content"),
+
     ]),
 
     # Live clock interval
     dcc.Interval(id="clock-interval", interval=1000, n_intervals=0),
 
+    # Loader interval (for progress circle)
+    dcc.Interval(id="loader-interval", interval=300, n_intervals=0, disabled=True),
 
 ], id="root-div", style={"background": THEME["bg"], "minHeight": "100vh"})
 
@@ -292,6 +288,7 @@ def update_clock(_):
     Output("store-company", "data"),
     Output("kpi-row", "children"),
     Output("error-alert", "children"),
+    Output("analysis-done", "data"),
     Input("run-btn", "n_clicks"),
     State("ticker-dropdown", "value"),
     State("date-range", "start_date"),
@@ -303,7 +300,7 @@ def update_clock(_):
 )
 def run_analysis(n_clicks, ticker, start_date, end_date, horizon, future_days, data_source):
     if not n_clicks:
-        return [None]*4 + [[], None]
+        return [None]*4 + [[], None, False]
     try:
         # 1. Fetch data (choose source)
         if data_source == "static":
@@ -315,11 +312,10 @@ def run_analysis(n_clicks, ticker, start_date, end_date, horizon, future_days, d
             company = get_company_info(ticker)
 
         # 2. Feature engineering
-        df_ind = add_technical_indicators(df.copy())
         X, y, feat_names = prepare_features(df, forecast_horizon=int(horizon))
 
         # 3. Train models
-        trainer = StockModelTrainer(test_size=0.2, n_cv_splits=3)
+        trainer = StockModelTrainer(test_size=0.2, n_cv_splits=5)
         trainer.train_all(X, y)
 
         # 4. Build forecast
@@ -389,7 +385,7 @@ def run_analysis(n_clicks, ticker, start_date, end_date, horizon, future_days, d
         ]
 
         return (ohlcv_store, df_ind_store, json.dumps(model_data),
-                json.dumps(company), kpi_cards, None)
+                json.dumps(company), kpi_cards, None, True)
 
     except Exception as e:
         err = html.Div(className="info-alert", children=[
@@ -401,7 +397,7 @@ def run_analysis(n_clicks, ticker, start_date, end_date, horizon, future_days, d
                 html.Small(traceback.format_exc()[-300:], style={"color":"#6b8aad","fontSize":"11px"}),
             ]),
         ])
-        return [None]*4 + [[], err]
+        return [None]*4 + [[], err, False]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -440,6 +436,51 @@ def render_tab(tab, ohlcv_json, feat_json, model_json, company_json):
         return build_fundamentals_tab(co, df)
     return html.Div("Select a tab.")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Callback: reset loader interval AND analysis-done flag on button click
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.callback(
+    Output("analysis-done", "data", allow_duplicate=True),
+    Output("loader-interval", "disabled"),
+    Output("loader-interval", "n_intervals"),
+    Input("run-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+def reset_loader(n_clicks):
+    return False, False, 0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Callback: render loading circle loader
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.callback(
+    Output("custom-loader", "children"),
+    Output("loader-interval", "disabled", allow_duplicate=True),
+    Input("loader-interval", "n_intervals"),
+    State("analysis-done", "data"),
+    prevent_initial_call=True,
+)
+def show_loader(n_intervals, analysis_done):
+    if analysis_done:
+        return None, True
+
+    # Animate up to 97% so it never falsely hits 100% before done
+    progress = min(n_intervals * 3, 97)
+    loader = html.Div([
+        html.Div(className="loader-ring-wrap", children=[
+            html.Div(className="orbit-loader",
+                     children=[html.Div() for _ in range(24)]),
+            html.Div(className="loader-center-text", children=[
+                html.Div(f"{progress}%", className="loader-progress-num"),
+                html.Div("Analysing", className="loader-progress-label"),
+            ]),
+        ]),
+        # Status line below the ring
+        html.Div("Processing data  ·  training models", className="loader-subtext"),
+    ], className="loader-wrapper")
+
+    return loader, False
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 1 — Market Overview
 # ─────────────────────────────────────────────────────────────────────────────
